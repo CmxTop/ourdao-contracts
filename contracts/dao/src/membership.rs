@@ -18,7 +18,6 @@ pub fn register_member(env: &Env, member: Address) -> Result<(), Error> {
     }
 
     let fee = storage::get_membership_fee(env);
-    util::token_client(env).transfer(&member, &util::contract_address(env), &fee);
 
     let is_returning = storage::get_member(env, &member).is_some();
     let record = Member {
@@ -45,6 +44,10 @@ pub fn register_member(env: &Env, member: Address) -> Result<(), Error> {
     }
     storage::set_active_members(env, storage::get_active_members(env) + 1);
     extend_instance(env);
+
+    // Interaction last (checks-effects-interactions): the fee transfer only
+    // happens once every state transition above has completed.
+    util::token_client(env).transfer(&member, &util::contract_address(env), &fee);
 
     env.events()
         .publish((symbol_short!("joined"),), (member, fee));
