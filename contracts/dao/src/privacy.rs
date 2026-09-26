@@ -46,6 +46,11 @@ pub fn commit_vote(
     if storage::has_treasury_voted(env, proposal_id, &voter) {
         return Err(Error::AlreadyVoted);
     }
+    // A commitment is binding: overwriting it would let a member keep changing
+    // their hidden vote until the reveal phase (#49).
+    if storage::get_commit(env, proposal_id, &voter).is_some() {
+        return Err(Error::AlreadyVoted);
+    }
 
     storage::set_commit(env, proposal_id, &voter, &commitment);
     env.events()

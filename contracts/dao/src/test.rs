@@ -450,6 +450,51 @@ fn commit_reveal_private_treasury_vote() {
 }
 
 #[test]
+fn commit_vote_cannot_be_overwritten() {
+    let s = setup(2);
+    let proposer = s.members.get(0).unwrap();
+    let voter = s.members.get(1).unwrap();
+    let dest = Address::generate(&s.env);
+    let reason = String::from_str(&s.env, "secret grant");
+    let pid = s
+        .client
+        .propose_treasury_withdrawal(&proposer, &600, &dest, &reason, &true);
+
+    let salt = BytesN::from_array(&s.env, &[7u8; 32]);
+    let other = BytesN::from_array(&s.env, &[9u8; 32]);
+    let c1 = compute_commitment(&s.env, true, &salt);
+    let c2 = compute_commitment(&s.env, false, &other);
+
+    s.client.commit_treasury_vote(&voter, &pid, &c1);
+    let again = s.client.try_commit_treasury_vote(&voter, &pid, &c2);
+    assert_eq!(again, Err(Ok(Error::AlreadyVoted)));
+
+    // The original commitment is still the one that reveals successfully.
+    advance(&s.env, VOTING_PERIOD + 1);
+    s.client.reveal_treasury_vote(&voter, &pid, &true, &salt);
+}
+
+#[test]
+fn initialize_rejects_duplicate_admins() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let token_admin = Address::generate(&env);
+    let token_id = env
+        .register_stellar_asset_contract_v2(token_admin)
+        .address();
+    let contract_id = env.register(OurDao, ());
+    let client = OurDaoClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let mut admins = Vec::new(&env);
+    admins.push_back(admin.clone());
+    admins.push_back(admin.clone());
+
+    let res = client.try_initialize(&admins, &5_100u32, &FEE, &token_id, &policy());
+    assert_eq!(res, Err(Ok(Error::AlreadyAdmin)));
+}
+
+#[test]
 fn content_hash_document() {
     let s = setup(1);
     let member = s.members.get(0).unwrap();
