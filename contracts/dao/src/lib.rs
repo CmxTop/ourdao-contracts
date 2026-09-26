@@ -292,7 +292,7 @@ impl OurDao {
         )
     }
 
-    pub fn is_eligible_for_loan(env: Env, member: Address) -> bool {
+    pub fn is_eligible_for_loan(env: Env, member: Address) -> Result<(), Error> {
         loans::is_eligible_for_loan(&env, &member)
     }
 
