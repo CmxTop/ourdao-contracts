@@ -40,6 +40,9 @@ pub fn commit_vote(
     if proposal.status != ProposalStatus::Pending {
         return Err(Error::NotInVotingPhase);
     }
+    if env.ledger().timestamp() > proposal.created_at + proposal.voting_period {
+        return Err(Error::VotingEnded);
+    }
     if storage::has_treasury_voted(env, proposal_id, &voter) {
         return Err(Error::AlreadyVoted);
     }
@@ -65,6 +68,12 @@ pub fn reveal_vote(
         storage::get_treasury_proposal(env, proposal_id).ok_or(Error::TreasuryProposalNotFound)?;
     if !proposal.private {
         return Err(Error::NotAuthorized);
+    }
+    if env.ledger().timestamp() <= proposal.created_at + proposal.voting_period {
+        return Err(Error::NotYetRevealed);
+    }
+    if storage::has_treasury_voted(env, proposal_id, &voter) {
+        return Err(Error::AlreadyRevealed);
     }
 
     let stored = storage::get_commit(env, proposal_id, &voter).ok_or(Error::NoCommitment)?;

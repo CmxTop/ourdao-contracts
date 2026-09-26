@@ -243,6 +243,10 @@ fn approve_and_disburse(env: &Env, proposal: &LoanProposal) -> Result<(), Error>
     if util::treasury_balance(env) < proposal.amount {
         return Err(Error::InsufficientTreasury);
     }
+    
+    // Issue 61: re-quote at disbursement so rate reflects current treasury balance
+    let terms = calculate_loan_terms(env, proposal.amount);
+
     let now = env.ledger().timestamp();
     // Reuse the proposal's own id rather than a separate counter: a proposal
     // produces at most one loan, so this keeps loan_id == proposal_id as an
@@ -254,10 +258,10 @@ fn approve_and_disburse(env: &Env, proposal: &LoanProposal) -> Result<(), Error>
         id,
         borrower: proposal.borrower.clone(),
         principal: proposal.amount,
-        interest_rate: proposal.interest_rate,
-        total_repayment: proposal.total_repayment,
+        interest_rate: terms.interest_rate,
+        total_repayment: terms.total_repayment,
         start_time: now,
-        due_time: now + proposal.duration,
+        due_time: now + terms.duration,
         status: LoanStatus::Active,
         amount_repaid: 0,
     };
@@ -464,6 +468,23 @@ pub(crate) fn distribute_interest(env: &Env, interest: i128) {
     if interest <= 0 || active == 0 {
         return;
     }
+    
+    // #60 — Carry the sub-divisible remainder forward instead of silently discarding
+    let total_interest = interest + storage::get_yield_remainder(env);
+    let per_member = total_interest / active;
+    let remainder = total_interest % active;
+    
+    storage::set_yield_remainder(env, remainder);
+    
+    if per_member > 0 {
+        let current = storage::get_yield_accumulator(env);
+        storage::set_yield_accumulator(env, current + per_member);
+    }
+    
+    // Unconditionally publish the event so the indexer sees the interest paid
+    env.events()
+        .publish((symbol_short!("interest"),), (interest, active));
+}
     let per_member = interest / active;
     if per_member == 0 {
         return;

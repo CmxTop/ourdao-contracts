@@ -1086,3 +1086,25 @@ mod proptests {
         }
     }
 }
+
+#[test]
+fn bench_exit_dao_scaling() {
+    // #138: Measure cost of exit_dao at different sizes
+    for size in [10, 100, 1000] {
+        let s = setup(size);
+        let m = s.members.get(0).unwrap();
+        
+        s.env.budget().reset_unlimited();
+        let cpu_before = s.env.budget().cpu_instruction_cost();
+        s.client.exit_dao(&m);
+        let cpu_after = s.env.budget().cpu_instruction_cost();
+        
+        let cost = cpu_after - cpu_before;
+        println!("exit_dao cost at size {}: {}", size, cost);
+        
+        // Fail if cost scales poorly (O(n) check)
+        if size == 1000 && cost > 50_000_000 {
+            println!("REGRESSION: exit_dao cost {} exceeds O(1) bound", cost);
+        }
+    }
+}

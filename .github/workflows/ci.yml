@@ -47,6 +47,14 @@ jobs:
       - name: Test
         if: always()
         run: cargo test --locked
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+
+      # --locked keeps the committed Cargo.lock (which pins ed25519-dalek to
+      # 2.2.0) authoritative, so the resolver can't float onto an incompatible
+      # transitive release.
+      - name: Test & Coverage
+        run: cargo llvm-cov --locked --all-targets --fail-under-lines 95
 
       - name: Build wasm (release)
         if: always()
