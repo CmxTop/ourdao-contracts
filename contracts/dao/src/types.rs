@@ -48,7 +48,7 @@ pub enum LoanStatus {
 pub struct Member {
     pub address: Address,
     pub status: MemberStatus,
-    pub join_ledger: u64,
+    pub join_time: u64,
     pub contribution: i128,
     pub share_balance: i128,
     pub has_active_loan: bool,

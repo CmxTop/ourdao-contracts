@@ -47,6 +47,7 @@ pub enum Error {
 
     // ---- native-swap modules ----
     NameTaken = 60,
+    /// Reserved for future name registry use
     NameNotFound = 61,
     NoStake = 62,
     InsufficientStake = 63,
@@ -62,4 +63,5 @@ pub enum Error {
     /// Caller is not the proposal's proposer/borrower and may not modify its
     /// attached document (#21).
     NotProposalOwner = 73,
+    DocumentTooLarge = 74,
 }
