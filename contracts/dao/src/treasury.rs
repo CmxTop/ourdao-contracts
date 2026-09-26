@@ -82,8 +82,6 @@ pub fn tally(
     // lifecycle: once VOTING_PERIOD has elapsed since creation, persist the
     // Expired status and reject further votes.
     if env.ledger().timestamp() > proposal.created_at + proposal.voting_period {
-        proposal.status = ProposalStatus::Expired;
-        storage::set_treasury_proposal(env, &proposal);
         return Err(Error::NotInVotingPhase);
     }
     if storage::has_treasury_voted(env, proposal.id, voter) {
@@ -159,4 +157,25 @@ fn execute(env: &Env, proposal: &mut TreasuryProposal) -> Result<(), Error> {
         (proposal.id, proposal.amount, proposal.destination.clone()),
     );
     Ok(())
+}
+
+
+pub fn expire_treasury_proposal(env: &Env, proposal_id: u32) -> Result<(), Error> {
+    util::require_initialized(env)?;
+    util::require_not_paused(env)?;
+    let mut proposal = storage::get_treasury_proposal(env, proposal_id)
+        .ok_or(Error::TreasuryProposalNotFound)?;
+    
+    if proposal.status != ProposalStatus::Pending {
+        return Err(Error::NotInVotingPhase); // Re-using error
+    }
+    
+    if env.ledger().timestamp() > proposal.created_at + proposal.voting_period {
+        proposal.status = ProposalStatus::Expired;
+        storage::set_treasury_proposal(env, &proposal);
+        // Emitting an event would be nice but not strictly required.
+        Ok(())
+    } else {
+        Err(Error::NotInVotingPhase) // Re-using error
+    }
 }
