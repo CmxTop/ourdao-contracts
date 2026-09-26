@@ -243,6 +243,10 @@ fn approve_and_disburse(env: &Env, proposal: &LoanProposal) -> Result<(), Error>
     if util::treasury_balance(env) < proposal.amount {
         return Err(Error::InsufficientTreasury);
     }
+    
+    // Issue 61: re-quote at disbursement so rate reflects current treasury balance
+    let terms = calculate_loan_terms(env, proposal.amount);
+
     let now = env.ledger().timestamp();
     // Reuse the proposal's own id rather than a separate counter: a proposal
     // produces at most one loan, so this keeps loan_id == proposal_id as an
@@ -254,10 +258,10 @@ fn approve_and_disburse(env: &Env, proposal: &LoanProposal) -> Result<(), Error>
         id,
         borrower: proposal.borrower.clone(),
         principal: proposal.amount,
-        interest_rate: proposal.interest_rate,
-        total_repayment: proposal.total_repayment,
+        interest_rate: terms.interest_rate,
+        total_repayment: terms.total_repayment,
         start_time: now,
-        due_time: now + proposal.duration,
+        due_time: now + terms.duration,
         status: LoanStatus::Active,
         amount_repaid: 0,
     };
