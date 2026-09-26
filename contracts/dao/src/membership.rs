@@ -24,7 +24,7 @@ pub fn register_member(env: &Env, member: Address) -> Result<(), Error> {
     let record = Member {
         address: member.clone(),
         status: MemberStatus::ActiveMember,
-        join_ledger: env.ledger().timestamp(),
+        join_time: env.ledger().timestamp(),
         contribution: fee,
         share_balance: fee,
         has_active_loan: false,
