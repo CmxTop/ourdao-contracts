@@ -384,6 +384,30 @@ fn name_registry() {
 }
 
 #[test]
+fn releasing_a_name_emits_an_event() {
+    use soroban_sdk::testutils::Events as _;
+
+    let s = setup(1);
+    let owner = s.members.get(0).unwrap();
+    let old = String::from_str(&s.env, "alice_dao");
+    let new = String::from_str(&s.env, "alice_v2");
+
+    s.client.register_name(&owner, &old);
+    // First registration frees nothing: only `name_reg` is emitted.
+    assert_eq!(s.env.events().all().events().len(), 1);
+
+    // Re-registering under a new name releases the old one: `name_rel`
+    // (old name, previous owner) is emitted alongside `name_reg` (#124).
+    s.client.register_name(&owner, &new);
+    assert_eq!(s.env.events().all().events().len(), 2);
+    assert_eq!(s.client.resolve_name(&old), None);
+
+    // Re-registering the same name releases nothing.
+    s.client.register_name(&owner, &new);
+    assert_eq!(s.env.events().all().events().len(), 1);
+}
+
+#[test]
 fn commit_reveal_private_treasury_vote() {
     let s = setup(3);
     let proposer = s.members.get(0).unwrap();
