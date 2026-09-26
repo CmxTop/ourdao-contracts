@@ -32,25 +32,25 @@ pub fn calculate_loan_terms(env: &Env, amount: i128) -> LoanTerms {
     }
 }
 
-pub fn is_eligible_for_loan(env: &Env, member: &Address) -> bool {
+pub fn is_eligible_for_loan(env: &Env, member: &Address) -> Result<(), Error> {
     let record = match storage::get_member(env, member) {
         Some(m) if m.status == MemberStatus::ActiveMember => m,
-        _ => return false,
+        _ => return Err(Error::MemberNotActive),
     };
     if record.has_active_loan {
-        return false;
+        return Err(Error::HasActiveLoan);
     }
     let policy = storage::get_policy(env);
     let now = env.ledger().timestamp();
     if now.saturating_sub(record.join_ledger) < policy.min_membership_duration {
-        return false;
+        return Err(Error::NotEligibleForLoan);
     }
     if record.last_loan_time != 0
         && now.saturating_sub(record.last_loan_time) < policy.cooldown_period
     {
-        return false;
+        return Err(Error::CooldownActive);
     }
-    true
+    Ok(())
 }
 
 pub fn request_loan(env: &Env, borrower: Address, amount: i128) -> Result<u32, Error> {
@@ -61,9 +61,7 @@ pub fn request_loan(env: &Env, borrower: Address, amount: i128) -> Result<u32, E
     if amount <= 0 {
         return Err(Error::InvalidAmount);
     }
-    if !is_eligible_for_loan(env, &borrower) {
-        return Err(Error::NotEligibleForLoan);
-    }
+    is_eligible_for_loan(env, &borrower)?;
 
     let policy = storage::get_policy(env);
     let treasury = util::treasury_balance(env);
@@ -328,6 +326,7 @@ fn repay_loan_internal(
     amount: Option<i128>,
 ) -> Result<(), Error> {
     util::require_initialized(env)?;
+    util::require_not_paused(env)?;
     borrower.require_auth();
 
     let mut loan = storage::get_loan(env, loan_id).ok_or(Error::LoanNotFound)?;
