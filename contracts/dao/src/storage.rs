@@ -45,6 +45,7 @@ pub enum DataKey {
     Stake(Address),
     // ---- pull-based yield accrual ----
     YieldAccumulator,
+    YieldRemainder,
     MemberYieldSnapshot(Address),
     // native-swap modules
     Doc(ProposalKind, u32),
@@ -305,7 +306,8 @@ pub fn get_yield_accumulator(env: &Env) -> i128 {
 pub fn set_yield_accumulator(env: &Env, value: i128) {
     env.storage()
         .instance()
-        .set(&DataKey::YieldAccumulator, &value);
+        .set(&DataKey::YieldAccumulator,
+    YieldRemainder, &value);
 }
 
 pub fn get_yield_snapshot(env: &Env, addr: &Address) -> i128 {
@@ -368,4 +370,18 @@ pub fn remove_commit(env: &Env, id: u32, voter: &Address) {
     env.storage()
         .persistent()
         .remove(&DataKey::Commit(id, voter.clone()));
+}
+
+
+pub fn get_yield_remainder(env: &Env) -> i128 {
+    env.storage()
+        .persistent()
+        .get(&DataKey::YieldRemainder)
+        .unwrap_or(0)
+}
+
+pub fn set_yield_remainder(env: &Env, value: i128) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::YieldRemainder, &value);
 }

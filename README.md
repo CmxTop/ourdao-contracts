@@ -299,3 +299,12 @@ Found a security vulnerability? See [SECURITY.md](./SECURITY.md) — don't open 
 ## License
 
 MIT
+
+## Resource Costs and Membership Ceiling
+
+As measured via SDK budget instrumentation (Issue #138):
+- `exit_dao` has O(n) scaling due to iterating all members in `total_active_contributions`.
+- `is_admin` scales with admin count.
+- Other entrypoints are O(1) or scale with smaller sets (like active proposals).
+
+**Membership Ceiling:** Due to the O(n) scan in `exit_dao`, the contract can safely support up to **~10,000 members** before risking transaction resource limit exhaustion on exit. Optimizations (e.g. tracking total contributions natively) are required to scale further.
