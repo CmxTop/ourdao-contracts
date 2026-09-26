@@ -11,12 +11,16 @@ fn validate_policy(policy: &LoanPolicy) -> Result<(), Error> {
         || policy.min_interest_rate as i128 > BASIS_POINTS
         || policy.max_interest_rate as i128 > BASIS_POINTS
         || policy.min_interest_rate > policy.max_interest_rate
+        || policy.max_loan_to_treasury_ratio == 0
         || policy.max_loan_to_treasury_ratio as i128 > BASIS_POINTS
         || policy.default_penalty_bps as i128 > BASIS_POINTS
         || policy.editing_period == 0
         || policy.voting_period == 0
         || policy.editing_period > 30 * 24 * 60 * 60
         || policy.voting_period > 30 * 24 * 60 * 60
+        || policy.min_membership_duration > 30 * 24 * 60 * 60
+        || policy.cooldown_period > 30 * 24 * 60 * 60
+        || policy.default_grace_period > 30 * 24 * 60 * 60
         || policy.treasury_threshold == 0
         || policy.treasury_threshold as i128 > BASIS_POINTS
     {
