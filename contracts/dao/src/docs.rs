@@ -7,6 +7,7 @@ use soroban_sdk::{symbol_short, Address, Bytes, Env};
 
 use crate::error::Error;
 use crate::storage::{self, ProposalKind};
+use crate::types::ProposalPhase;
 use crate::util;
 
 fn proposal_exists(env: &Env, kind: &ProposalKind, id: u32) -> bool {
@@ -45,6 +46,15 @@ pub fn attach_document(
     if proposal_owner(env, &kind, proposal_id) != Some(caller.clone()) {
         return Err(Error::NotProposalOwner);
     }
+    // #59 — Do not allow silent swaps of the document once voting is open.
+    if let ProposalKind::Loan = kind {
+        if let Some(p) = storage::get_loan_proposal(env, proposal_id) {
+            if p.phase != ProposalPhase::Editing {
+                return Err(Error::NotEditingPhase);
+            }
+        }
+    }
+    
     storage::set_doc(env, kind, proposal_id, &content_hash);
     env.events()
         .publish((symbol_short!("doc_attn"),), (kind, proposal_id, caller));
