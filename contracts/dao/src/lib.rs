@@ -179,7 +179,14 @@ impl OurDao {
         treasury::vote(&env, voter, proposal_id, support)
     }
 
-    pub fn execute_treasury_proposal(env: Env, proposal_id: u32) -> Result<(), Error> {
+    pub fn expire_treasury_proposal(env: Env, proposal_id: u32) -> Result<(), Error> {
+        treasury::expire_treasury_proposal(&env, proposal_id)
+    }
+
+    pub fn execute_treasury_proposal(
+        env: Env,
+        proposal_id: u32,
+    ) -> Result<(), Error> {
         treasury::execute_approved(&env, proposal_id)
     }
 
@@ -289,7 +296,7 @@ impl OurDao {
         )
     }
 
-    pub fn is_eligible_for_loan(env: Env, member: Address) -> bool {
+    pub fn is_eligible_for_loan(env: Env, member: Address) -> Result<(), Error> {
         loans::is_eligible_for_loan(&env, &member)
     }
 
