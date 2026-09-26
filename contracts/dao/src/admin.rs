@@ -60,6 +60,16 @@ pub fn initialize(
     if admins.is_empty() {
         return Err(Error::NotAuthorized);
     }
+    // Duplicate admins would let remove_admin drop every copy of an address
+    // while the len() > 1 guard still passes, leaving zero admins (#42).
+    for i in 0..admins.len() {
+        let a = admins.get(i).unwrap();
+        for j in (i + 1)..admins.len() {
+            if admins.get(j).unwrap() == a {
+                return Err(Error::AlreadyAdmin);
+            }
+        }
+    }
     validate_policy(&policy)?;
     validate_token(env, &token)?;
 
