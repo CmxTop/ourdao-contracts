@@ -1,0 +1,140 @@
+# Contract Invariants
+
+This document lists every invariant the OurDAO contract relies on, cross-referenced
+against the test that covers it (if any).
+
+Untested invariants have a tracking issue linked; they must not be broken by a
+contributor's change. See [CONTRIBUTING.md](../CONTRIBUTING.md#contract-specific-rules)
+for the process.
+
+---
+
+## Accounting invariants
+
+### A1 — Distributed interest never exceeds collected interest
+**Statement:** The sum of `get_pending_yield(m)` across all active members is
+less than or equal to the total `interest` passed to `distribute_interest`.
+Specifically, each member receives exactly `interest / active_members` and the
+remainder (`interest % active_members`) stays in the treasury.
+
+**Tested:** ✅ `proptests::distributed_interest_never_exceeds_collected`
+(`contracts/dao/src/test.rs`)
+
+---
+
+### A2 — Exit shares never exceed the treasury
+**Statement:** `calculate_exit_share(m)` is bounded by `m.contribution / total_contributions
+* treasury_balance`. The sum of all members' exit shares is therefore bounded by the
+total treasury, so paying out every member simultaneously can never leave the
+treasury in deficit.
+
+**Tested:** ✅ `proptests::exit_shares_never_exceed_treasury`
+(`contracts/dao/src/test.rs`)
+
+---
+
+### A3 — Treasury balance excludes staked principal
+**Statement:** `treasury_balance` is defined as `token.balance(contract) - total_staked`.
+Staked tokens are never counted as lendable or distributable treasury.
+
+**Tested:** ⚠️ Covered implicitly by staking tests, but no dedicated invariant
+property test exists. Tracking issue: open as follow-up (#134).
+
+---
+
+### A4 — Total contributions counter consistency
+**Statement:** The internal `TotalContributions` counter must equal the sum of
+`member.contribution` across all active members.
+
+**Tested:** ❌ **Not tested.** The counter is only ever decremented (e.g., on
+default slashing), never incremented to mirror actual joins. This is a known
+inconsistency; tracking issue: open as follow-up (#134).
+
+> **Note:** This is the invariant whose absence is hardest to notice without a
+> written list. A stated invariant is what makes the contradiction visible.
+
+---
+
+## Lifecycle invariants
+
+### L1 — `loan_id == proposal_id`
+**Statement:** Every `Loan` record has the same `id` as the `LoanProposal` that
+created it. This identity is used by the storage layer and `schema.sql` downstream
+to join the two tables without a separate foreign-key column.
+
+**Reference:** `contracts/dao/src/loans.rs:247–251` (comment in source).
+
+**Tested:** ⚠️ Asserted implicitly by the loan approval path, but not as a
+named invariant test. Tracking issue: open as follow-up (#134).
+
+---
+
+### L2 — A member with `has_active_loan` has exactly one `Active` loan
+**Statement:** `member.has_active_loan == true` if and only if exactly one loan
+record with `status == LoanStatus::Active` exists for that member's address.
+
+**Tested:** ❌ **Not tested** as a standalone invariant.
+Tracking issue: open as follow-up (#134).
+
+---
+
+### L3 — `active_members <= total_members`
+**Statement:** `get_active_members()` is always less than or equal to
+`get_total_members()`. `total_members` counts exits and inactive members;
+`active_members` counts only `MemberStatus::ActiveMember` records.
+
+**Tested:** ⚠️ Covered by specific exit tests; not a property test.
+Tracking issue: open as follow-up (#134).
+
+---
+
+### L4 — `total_staked == sum of member stakes`
+**Statement:** `get_total_staked()` equals the sum of `storage::get_stake(m)`
+across all members. The two must stay in sync on every `stake` / `unstake`
+call.
+
+**Tested:** ❌ **Not tested** as a standalone invariant.
+Tracking issue: open as follow-up (#134).
+
+---
+
+## Governance invariants
+
+### G1 — Voting weight stays in `[1, 6]`
+**Statement:** `voting_weight(m)` is always in the range `[1, MAX_STAKE_BONUS + 1]`
+(`[1, 6]`). One base vote per active member, plus up to `MAX_STAKE_BONUS` (5)
+bonus votes at `STAKE_WEIGHT_UNIT` (100) tokens per bonus vote.
+
+**Tested:** ✅ `proptests::voting_weight_stays_in_bounds`
+(`contracts/dao/src/test.rs`)
+
+---
+
+### G2 — Voting weight is monotonic in stake
+**Statement:** More stake never reduces voting weight:
+`stake_a <= stake_b ⟹ voting_weight(a) <= voting_weight(b)`.
+
+**Tested:** ✅ `proptests::voting_weight_is_monotonic_in_stake`
+(`contracts/dao/src/test.rs`)
+
+---
+
+### G3 — Interest rate stays within policy bounds
+**Statement:** `calculate_loan_terms(amount).interest_rate` is always in
+`[policy.min_interest_rate, policy.max_interest_rate]`, for any `amount` and
+any treasury size.
+
+**Tested:** ✅ `proptests::loan_terms_rate_stays_within_policy_bounds`
+(`contracts/dao/src/test.rs`)
+
+---
+
+## Notes for contributors
+
+1. Before changing any code path that touches treasury accounting, staking,
+   member lifecycle, or voting weight, verify that all invariants above still hold.
+2. If you add a new invariant (a new "must always be true" statement), add it here
+   and either add a property test for it or open a tracking issue.
+3. Untested invariants (**❌**) are the highest-priority candidates for new property
+   tests — they represent the shortest path from "working code" to "a bug nobody
+   noticed."
