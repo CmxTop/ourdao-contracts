@@ -18,7 +18,7 @@ These are known, accepted limitations, not novel findings — please don't spend
 
 - **No upgrade path.** The contract is immutable by design; see [`docs/MIGRATION.md`](./docs/MIGRATION.md) and the README's [Known limitations](./README.md#known-limitations).
 - **Testnet-only deploy tooling.** Tracked in [#30](https://github.com/ourdao/ourdao-contracts/issues/30).
-- **No external audit yet.** Tracked on the [Roadmap](./README.md#roadmap) — an audit is planned before any mainnet consideration.
+- **No external audit yet.** Preparation is tracked in [`docs/AUDIT_PREPARATION.md`](./docs/AUDIT_PREPARATION.md) and on the [Roadmap](./README.md#roadmap) — an audit is planned before any mainnet consideration.
 
 If you're unsure whether something is a known limitation or a genuine finding, report it privately anyway (see below) — that's a cheaper way to resolve the ambiguity than either of us guessing in a public issue.
 
