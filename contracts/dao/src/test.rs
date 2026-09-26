@@ -1108,3 +1108,44 @@ fn bench_exit_dao_scaling() {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// initialize token validation (#115)
+// ---------------------------------------------------------------------------
+
+fn init_with_token(env: &Env, token: &Address) -> Result<(), Error> {
+    let contract_id = env.register(OurDao, ());
+    let client = OurDaoClient::new(env, &contract_id);
+    let mut admins = Vec::new(env);
+    admins.push_back(Address::generate(env));
+    match client.try_initialize(&admins, &5_100u32, &FEE, token, &policy()) {
+        Ok(_) => Ok(()),
+        Err(Ok(e)) => Err(e),
+        Err(Err(_)) => panic!("unexpected host error"),
+    }
+}
+
+#[test]
+fn initialize_rejects_account_address_as_token() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let not_a_contract = Address::generate(&env);
+    assert_eq!(init_with_token(&env, &not_a_contract), Err(Error::InvalidToken));
+}
+
+#[test]
+fn initialize_rejects_contract_that_is_not_a_token() {
+    let env = Env::default();
+    env.mock_all_auths();
+    // A real contract, but not a token: it has no `balance` entrypoint.
+    let other = env.register(OurDao, ());
+    assert_eq!(init_with_token(&env, &other), Err(Error::InvalidToken));
+}
+
+#[test]
+fn initialize_accepts_a_real_token() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let sac = env.register_stellar_asset_contract_v2(Address::generate(&env));
+    assert_eq!(init_with_token(&env, &sac.address()), Ok(()));
+}
