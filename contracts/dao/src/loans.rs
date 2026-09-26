@@ -280,7 +280,7 @@ fn approve_and_disburse(env: &Env, proposal: &LoanProposal) -> Result<(), Error>
 
     env.events().publish(
         (symbol_short!("loan_appr"),),
-        (id, proposal.borrower.clone(), proposal.amount),
+        (id, proposal.borrower.clone(), proposal.amount, due_time),
     );
     Ok(())
 }
