@@ -5,9 +5,7 @@ use soroban_sdk::{token, Address, Bytes, BytesN, Env, String, Vec};
 
 use crate::privacy::compute_commitment;
 use crate::storage::ProposalKind;
-use crate::types::{
-    LoanPolicy, LoanStatus, MemberStatus, ProposalPhase, ProposalStatus,
-};
+use crate::types::{LoanPolicy, LoanStatus, MemberStatus, ProposalPhase, ProposalStatus};
 use crate::{Error, OurDao, OurDaoClient};
 
 const FEE: i128 = 1_000;

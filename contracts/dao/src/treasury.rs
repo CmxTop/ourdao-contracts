@@ -111,10 +111,8 @@ pub fn tally(
         proposal.status = ProposalStatus::ApprovedPendingDisbursement;
         storage::set_treasury_proposal(env, &proposal);
         if execute(env, &mut proposal).is_err() {
-            env.events().publish(
-                (symbol_short!("tre_wait"),),
-                (proposal.id, proposal.amount),
-            );
+            env.events()
+                .publish((symbol_short!("tre_wait"),), (proposal.id, proposal.amount));
         }
     } else {
         let remaining = storage::get_active_members(env).saturating_sub(proposal.votes_cast);
@@ -134,8 +132,8 @@ pub fn tally(
 pub fn execute_approved(env: &Env, proposal_id: u32) -> Result<(), Error> {
     util::require_initialized(env)?;
     util::require_not_paused(env)?;
-    let mut proposal = storage::get_treasury_proposal(env, proposal_id)
-        .ok_or(Error::TreasuryProposalNotFound)?;
+    let mut proposal =
+        storage::get_treasury_proposal(env, proposal_id).ok_or(Error::TreasuryProposalNotFound)?;
     if proposal.status != ProposalStatus::ApprovedPendingDisbursement {
         return Err(Error::NotInVotingPhase);
     }
