@@ -45,7 +45,11 @@ pub fn register_name(env: &Env, owner: Address, name: String) -> Result<(), Erro
     // Free any name this owner held previously so lookups stay 1:1.
     if let Some(old) = storage::get_name_of(env, &owner) {
         if old != name {
-            env.storage().persistent().remove(&DataKey::Name(old));
+            env.storage().persistent().remove(&DataKey::Name(old.clone()));
+            // Announce the release so the set of free names is
+            // reconstructable from the event log alone (issue #124).
+            env.events()
+                .publish((symbol_short!("name_rel"),), (old, owner.clone()));
         }
     }
 
