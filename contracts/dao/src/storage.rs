@@ -40,6 +40,7 @@ pub enum DataKey {
     Loan(u32),
     TreasuryProposal(u32),
     LoanVoted(u32, Address),
+    StakeTime(Address),
     TreasuryVoted(u32, Address),
     PendingYield(Address),
     Stake(Address),

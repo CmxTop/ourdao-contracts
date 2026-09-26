@@ -69,8 +69,13 @@ pub fn reveal_vote(
     if !proposal.private {
         return Err(Error::NotAuthorized);
     }
-    if env.ledger().timestamp() <= proposal.created_at + proposal.voting_period {
+    let commit_end = proposal.created_at + proposal.voting_period;
+    let reveal_end = commit_end + proposal.voting_period;
+    if env.ledger().timestamp() <= commit_end {
         return Err(Error::NotYetRevealed);
+    }
+    if env.ledger().timestamp() > reveal_end {
+        return Err(Error::VotingEnded);
     }
     if storage::has_treasury_voted(env, proposal_id, &voter) {
         return Err(Error::AlreadyRevealed);
