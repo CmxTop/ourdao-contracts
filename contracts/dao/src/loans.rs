@@ -467,6 +467,23 @@ pub(crate) fn distribute_interest(env: &Env, interest: i128) {
     if interest <= 0 || active == 0 {
         return;
     }
+    
+    // #60 — Carry the sub-divisible remainder forward instead of silently discarding
+    let total_interest = interest + storage::get_yield_remainder(env);
+    let per_member = total_interest / active;
+    let remainder = total_interest % active;
+    
+    storage::set_yield_remainder(env, remainder);
+    
+    if per_member > 0 {
+        let current = storage::get_yield_accumulator(env);
+        storage::set_yield_accumulator(env, current + per_member);
+    }
+    
+    // Unconditionally publish the event so the indexer sees the interest paid
+    env.events()
+        .publish((symbol_short!("interest"),), (interest, active));
+}
     let per_member = interest / active;
     if per_member == 0 {
         return;
