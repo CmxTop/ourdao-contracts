@@ -64,4 +64,7 @@ pub enum Error {
     /// attached document (#21).
     NotProposalOwner = 73,
     DocumentTooLarge = 74,
+    /// The token passed to `initialize` is not a contract implementing the
+    /// token interface (#115).
+    InvalidToken = 75,
 }

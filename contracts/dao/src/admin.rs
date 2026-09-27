@@ -1,4 +1,4 @@
-use soroban_sdk::{symbol_short, Address, Env, Vec};
+use soroban_sdk::{symbol_short, token, Address, Env, Vec};
 
 use crate::error::Error;
 use crate::storage::{self, extend_instance};
@@ -29,6 +29,17 @@ fn validate_policy(policy: &LoanPolicy) -> Result<(), Error> {
     Ok(())
 }
 
+/// Probe `token` with a read-only `balance` call so a wrong address (an
+/// account, a non-token contract, or a typo) is rejected at initialization
+/// instead of bricking every later transfer. `try_` calls turn a missing
+/// contract or missing function into an error rather than a trap.
+fn validate_token(env: &Env, token: &Address) -> Result<(), Error> {
+    match token::Client::new(env, token).try_balance(&env.current_contract_address()) {
+        Ok(Ok(_)) => Ok(()),
+        _ => Err(Error::InvalidToken),
+    }
+}
+
 pub fn initialize(
     env: &Env,
     admins: Vec<Address>,
@@ -49,7 +60,15 @@ pub fn initialize(
     if admins.is_empty() {
         return Err(Error::NotAuthorized);
     }
+    // Duplicates would let `remove_admin` (which drops every matching entry)
+    // leave the contract with zero admins despite its last-admin guard (#42).
+    for (i, a) in admins.iter().enumerate() {
+        if admins.iter().skip(i + 1).any(|b| b == a) {
+            return Err(Error::AlreadyAdmin);
+        }
+    }
     validate_policy(&policy)?;
+    validate_token(env, &token)?;
 
     storage::set_admins(env, &admins);
     storage::set_threshold(env, consensus_threshold);

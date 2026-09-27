@@ -385,6 +385,30 @@ fn name_registry() {
 }
 
 #[test]
+fn releasing_a_name_emits_an_event() {
+    use soroban_sdk::testutils::Events as _;
+
+    let s = setup(1);
+    let owner = s.members.get(0).unwrap();
+    let old = String::from_str(&s.env, "alice_dao");
+    let new = String::from_str(&s.env, "alice_v2");
+
+    s.client.register_name(&owner, &old);
+    // First registration frees nothing: only `name_reg` is emitted.
+    assert_eq!(s.env.events().all().events().len(), 1);
+
+    // Re-registering under a new name releases the old one: `name_rel`
+    // (old name, previous owner) is emitted alongside `name_reg` (#124).
+    s.client.register_name(&owner, &new);
+    assert_eq!(s.env.events().all().events().len(), 2);
+    assert_eq!(s.client.resolve_name(&old), None);
+
+    // Re-registering the same name releases nothing.
+    s.client.register_name(&owner, &new);
+    assert_eq!(s.env.events().all().events().len(), 1);
+}
+
+#[test]
 fn commit_reveal_private_treasury_vote() {
     let s = setup(3);
     let proposer = s.members.get(0).unwrap();
@@ -424,6 +448,51 @@ fn commit_reveal_private_treasury_vote() {
         ProposalStatus::Executed
     );
     assert_eq!(s.token.balance(&dest), 600);
+}
+
+#[test]
+fn commit_vote_cannot_be_overwritten() {
+    let s = setup(2);
+    let proposer = s.members.get(0).unwrap();
+    let voter = s.members.get(1).unwrap();
+    let dest = Address::generate(&s.env);
+    let reason = String::from_str(&s.env, "secret grant");
+    let pid = s
+        .client
+        .propose_treasury_withdrawal(&proposer, &600, &dest, &reason, &true);
+
+    let salt = BytesN::from_array(&s.env, &[7u8; 32]);
+    let other = BytesN::from_array(&s.env, &[9u8; 32]);
+    let c1 = compute_commitment(&s.env, true, &salt);
+    let c2 = compute_commitment(&s.env, false, &other);
+
+    s.client.commit_treasury_vote(&voter, &pid, &c1);
+    let again = s.client.try_commit_treasury_vote(&voter, &pid, &c2);
+    assert_eq!(again, Err(Ok(Error::AlreadyVoted)));
+
+    // The original commitment is still the one that reveals successfully.
+    advance(&s.env, VOTING_PERIOD + 1);
+    s.client.reveal_treasury_vote(&voter, &pid, &true, &salt);
+}
+
+#[test]
+fn initialize_rejects_duplicate_admins() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let token_admin = Address::generate(&env);
+    let token_id = env
+        .register_stellar_asset_contract_v2(token_admin)
+        .address();
+    let contract_id = env.register(OurDao, ());
+    let client = OurDaoClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let mut admins = Vec::new(&env);
+    admins.push_back(admin.clone());
+    admins.push_back(admin.clone());
+
+    let res = client.try_initialize(&admins, &5_100u32, &FEE, &token_id, &policy());
+    assert_eq!(res, Err(Ok(Error::AlreadyAdmin)));
 }
 
 #[test]
@@ -1233,4 +1302,42 @@ fn approved_but_unfundable_treasury_withdrawal_waits_then_executes_after_refill(
     let prop = s.client.get_treasury_proposal(&second).unwrap();
     assert_eq!(prop.status, ProposalStatus::Executed);
     assert_eq!(s.token.balance(&dest), 4_500);
+// initialize token validation (#115)
+// ---------------------------------------------------------------------------
+
+fn init_with_token(env: &Env, token: &Address) -> Result<(), Error> {
+    let contract_id = env.register(OurDao, ());
+    let client = OurDaoClient::new(env, &contract_id);
+    let mut admins = Vec::new(env);
+    admins.push_back(Address::generate(env));
+    match client.try_initialize(&admins, &5_100u32, &FEE, token, &policy()) {
+        Ok(_) => Ok(()),
+        Err(Ok(e)) => Err(e),
+        Err(Err(_)) => panic!("unexpected host error"),
+    }
+}
+
+#[test]
+fn initialize_rejects_account_address_as_token() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let not_a_contract = Address::generate(&env);
+    assert_eq!(init_with_token(&env, &not_a_contract), Err(Error::InvalidToken));
+}
+
+#[test]
+fn initialize_rejects_contract_that_is_not_a_token() {
+    let env = Env::default();
+    env.mock_all_auths();
+    // A real contract, but not a token: it has no `balance` entrypoint.
+    let other = env.register(OurDao, ());
+    assert_eq!(init_with_token(&env, &other), Err(Error::InvalidToken));
+}
+
+#[test]
+fn initialize_accepts_a_real_token() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let sac = env.register_stellar_asset_contract_v2(Address::generate(&env));
+    assert_eq!(init_with_token(&env, &sac.address()), Ok(()));
 }

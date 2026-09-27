@@ -141,5 +141,5 @@ Log the date and duration in the team's ops notes.
 - `contracts/dao/src/admin.rs:126–146` — `pause` and `unpause` implementations
 - `contracts/dao/src/util.rs:35–41` — `require_not_paused`
 - `contracts/dao/src/loans.rs:413–425` — pause guard in loan flow
-- `PAUSE_FUNCTIONALITY.md` — full list of guarded entrypoints
+- [`PAUSE_FUNCTIONALITY.md`](PAUSE_FUNCTIONALITY.md) — full list of guarded entrypoints
 - [`SECURITY.md`](../SECURITY.md) — how to report a vulnerability
