@@ -68,6 +68,11 @@ pub fn initialize(
             if admins.get(j).unwrap() == a {
                 return Err(Error::AlreadyAdmin);
             }
+    // Duplicates would let `remove_admin` (which drops every matching entry)
+    // leave the contract with zero admins despite its last-admin guard (#42).
+    for (i, a) in admins.iter().enumerate() {
+        if admins.iter().skip(i + 1).any(|b| b == a) {
+            return Err(Error::AlreadyAdmin);
         }
     }
     validate_policy(&policy)?;

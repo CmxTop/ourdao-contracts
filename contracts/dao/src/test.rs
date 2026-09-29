@@ -1,6 +1,7 @@
 #![cfg(test)]
 
-use soroban_sdk::testutils::{Address as _, Ledger as _};
+use soroban_sdk::testutils::{Address as _, Events as _, Ledger as _};
+use soroban_sdk::xdr::{ContractEventBody, ScVal};
 use soroban_sdk::{token, Address, Bytes, BytesN, Env, String, Vec};
 
 use crate::privacy::compute_commitment;
@@ -450,6 +451,51 @@ fn commit_reveal_private_treasury_vote() {
 }
 
 #[test]
+fn commit_vote_cannot_be_overwritten() {
+    let s = setup(2);
+    let proposer = s.members.get(0).unwrap();
+    let voter = s.members.get(1).unwrap();
+    let dest = Address::generate(&s.env);
+    let reason = String::from_str(&s.env, "secret grant");
+    let pid = s
+        .client
+        .propose_treasury_withdrawal(&proposer, &600, &dest, &reason, &true);
+
+    let salt = BytesN::from_array(&s.env, &[7u8; 32]);
+    let other = BytesN::from_array(&s.env, &[9u8; 32]);
+    let c1 = compute_commitment(&s.env, true, &salt);
+    let c2 = compute_commitment(&s.env, false, &other);
+
+    s.client.commit_treasury_vote(&voter, &pid, &c1);
+    let again = s.client.try_commit_treasury_vote(&voter, &pid, &c2);
+    assert_eq!(again, Err(Ok(Error::AlreadyVoted)));
+
+    // The original commitment is still the one that reveals successfully.
+    advance(&s.env, VOTING_PERIOD + 1);
+    s.client.reveal_treasury_vote(&voter, &pid, &true, &salt);
+}
+
+#[test]
+fn initialize_rejects_duplicate_admins() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let token_admin = Address::generate(&env);
+    let token_id = env
+        .register_stellar_asset_contract_v2(token_admin)
+        .address();
+    let contract_id = env.register(OurDao, ());
+    let client = OurDaoClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let mut admins = Vec::new(&env);
+    admins.push_back(admin.clone());
+    admins.push_back(admin.clone());
+
+    let res = client.try_initialize(&admins, &5_100u32, &FEE, &token_id, &policy());
+    assert_eq!(res, Err(Ok(Error::AlreadyAdmin)));
+}
+
+#[test]
 fn content_hash_document() {
     let s = setup(1);
     let member = s.members.get(0).unwrap();
@@ -462,15 +508,121 @@ fn content_hash_document() {
 }
 
 #[test]
-fn pause_blocks_state_changes() {
-    let s = setup(1);
+fn pause_blocks_all_mutating_entrypoints() {
+    // This test explicitly checks every mutating entrypoint to ensure pause()
+    // prevents state changes. Every public entrypoint that mutates contract state
+    // must be listed below with an assertion. If you add a new mutating entrypoint
+    // without a pause decision, this test will fail — the property being protected
+    // (an emergency stop actually stops everything) is too critical to check by
+    // hand-written list.
+    //
+    // Entrypoints deliberately callable while paused:
+    // - None. All state-changing operations should be blocked by pause().
+    // - Note: repayment was discussed but decided to be pause-gated to maintain
+    //   consistent emergency stop semantics (see issue #52).
+
+    let s = setup(3);
+    let borrower = s.members.get(0).unwrap();
+    let voter = s.members.get(1).unwrap();
+    let staker = s.members.get(2).unwrap();
+    let newcomer = Address::generate(&s.env);
+
+    // Set up some proposals to vote on / interact with
+    let loan_pid = s.client.request_loan(&borrower, &500);
+    advance(&s.env, EDITING + 1);
+
+    let treasury_pid = s.client.propose_treasury_withdrawal(
+        &borrower,
+        &100,
+        &newcomer,
+        &String::from_slice(&s.env, "test"),
+        &false,
+    );
+
+    // Pause the contract
     s.client.pause(&s.admin);
     assert!(s.client.is_paused());
 
-    let newcomer = Address::generate(&s.env);
+    // ==================== Membership ====================
     let res = s.client.try_register_member(&newcomer);
-    assert_eq!(res, Err(Ok(Error::Paused)));
+    assert_eq!(res, Err(Ok(Error::Paused)), "register_member should be pause-gated");
 
+    let res = s.client.try_exit_dao(&borrower);
+    assert_eq!(res, Err(Ok(Error::Paused)), "exit_dao should be pause-gated");
+
+    let res = s.client.try_claim_rewards(&borrower);
+    assert_eq!(res, Err(Ok(Error::Paused)), "claim_rewards should be pause-gated");
+
+    // ==================== Loans ====================
+    let res = s.client.try_request_loan(&borrower, &1000);
+    assert_eq!(res, Err(Ok(Error::Paused)), "request_loan should be pause-gated");
+
+    let res = s.client.try_edit_loan_proposal(&borrower, &loan_pid, &600);
+    assert_eq!(res, Err(Ok(Error::Paused)), "edit_loan_proposal should be pause-gated");
+
+    let res = s.client.try_vote_on_loan_proposal(&voter, &loan_pid, &true);
+    assert_eq!(res, Err(Ok(Error::Paused)), "vote_on_loan_proposal should be pause-gated");
+
+    let res = s.client.try_disburse_approved_loan(&loan_pid);
+    assert_eq!(res, Err(Ok(Error::Paused)), "disburse_approved_loan should be pause-gated");
+
+    let res = s.client.try_repay_loan(&borrower, &0);
+    assert_eq!(res, Err(Ok(Error::Paused)), "repay_loan should be pause-gated");
+
+    let res = s.client.try_repay_loan_partial(&borrower, &0, &100);
+    assert_eq!(res, Err(Ok(Error::Paused)), "repay_loan_partial should be pause-gated");
+
+    let res = s.client.try_mark_loan_defaulted(&0);
+    assert_eq!(res, Err(Ok(Error::Paused)), "mark_loan_defaulted should be pause-gated");
+
+    let res = s.client.try_expire_loan_proposal(&0);
+    assert_eq!(res, Err(Ok(Error::Paused)), "expire_loan_proposal should be pause-gated");
+
+    // ==================== Treasury ====================
+    let res = s.client.try_propose_treasury_withdrawal(
+        &borrower,
+        &100,
+        &newcomer,
+        &String::from_slice(&s.env, "test"),
+        &false,
+    );
+    assert_eq!(res, Err(Ok(Error::Paused)), "propose_treasury_withdrawal should be pause-gated");
+
+    let res = s.client.try_vote_on_treasury_proposal(&voter, &treasury_pid, &true);
+    assert_eq!(res, Err(Ok(Error::Paused)), "vote_on_treasury_proposal should be pause-gated");
+
+    let res = s.client.try_expire_treasury_proposal(&0);
+    assert_eq!(res, Err(Ok(Error::Paused)), "expire_treasury_proposal should be pause-gated");
+
+    let res = s.client.try_execute_treasury_proposal(&0);
+    assert_eq!(res, Err(Ok(Error::Paused)), "execute_treasury_proposal should be pause-gated");
+
+    // ==================== Staking ====================
+    let res = s.client.try_stake(&staker, &100);
+    assert_eq!(res, Err(Ok(Error::Paused)), "stake should be pause-gated");
+
+    let res = s.client.try_unstake(&staker, &100);
+    assert_eq!(res, Err(Ok(Error::Paused)), "unstake should be pause-gated");
+
+    // ==================== Registry ====================
+    let res = s.client.try_register_name(&borrower, &String::from_slice(&s.env, "test"));
+    assert_eq!(res, Err(Ok(Error::Paused)), "register_name should be pause-gated");
+
+    // ==================== Privacy (commit-reveal voting) ====================
+    let commitment = BytesN::from_array(&s.env, &[0u8; 32]);
+    let res = s.client.try_commit_treasury_vote(&voter, &treasury_pid, &commitment);
+    assert_eq!(res, Err(Ok(Error::Paused)), "commit_treasury_vote should be pause-gated");
+
+    let salt = BytesN::from_array(&s.env, &[0u8; 32]);
+    let res = s.client.try_reveal_treasury_vote(&voter, &treasury_pid, &true, &salt);
+    assert_eq!(res, Err(Ok(Error::Paused)), "reveal_treasury_vote should be pause-gated");
+
+    // ==================== Docs (content-hash metadata) ====================
+    let cid = Bytes::from_slice(&s.env, &[1, 2, 3]);
+    let res = s.client.try_attach_document(&borrower, &ProposalKind::Loan, &loan_pid, &cid);
+    assert_eq!(res, Err(Ok(Error::Paused)), "attach_document should be pause-gated");
+
+    // Verify unpause works
     s.client.unpause(&s.admin);
     assert!(!s.client.is_paused());
 }
@@ -1134,6 +1286,128 @@ fn bench_exit_dao_scaling() {
 }
 
 // ---------------------------------------------------------------------------
+// Approved-but-unfundable path (#108): a proposal passes its vote while the
+// treasury can't cover it, so it parks in ApprovedPendingDisbursement and
+// emits `loan_wait` / `tre_wait` instead of paying out.
+// ---------------------------------------------------------------------------
+
+/// True if any event from the most recent invocation has `name` as its first topic.
+fn emitted(env: &Env, name: &str) -> bool {
+    env.events().all().events().iter().any(|e| {
+        let ContractEventBody::V0(body) = &e.body;
+        matches!(body.topics.first(), Some(ScVal::Symbol(sym)) if sym.0.to_utf8_string_lossy() == name)
+    })
+}
+
+/// Join a new member (mints their fee first), growing the treasury by FEE.
+fn refill_treasury(s: &Setup) {
+    let m = Address::generate(&s.env);
+    token::StellarAssetClient::new(&s.env, &s.token.address).mint(&m, &MINT);
+    s.client.register_member(&m);
+}
+
+#[test]
+fn approved_but_unfundable_loan_waits_then_disburses_after_refill() {
+    // 4 members => treasury 4000, max loan 2000 (50%), 3 of 4 votes required.
+    let s = setup(4);
+    let borrower = s.members.get(0).unwrap();
+    let v1 = s.members.get(1).unwrap();
+    let v2 = s.members.get(2).unwrap();
+    let v3 = s.members.get(3).unwrap();
+
+    // Request passes the pre-vote ratio check against the full treasury...
+    let pid = s.client.request_loan(&borrower, &1_500);
+
+    // ...then the treasury is drained by a passed withdrawal before the loan vote closes.
+    let dest = Address::generate(&s.env);
+    let reason = String::from_str(&s.env, "drain");
+    let tid = s
+        .client
+        .propose_treasury_withdrawal(&v1, &3_000, &dest, &reason, &false);
+    s.client.vote_on_treasury_proposal(&v1, &tid, &true);
+    s.client.vote_on_treasury_proposal(&v2, &tid, &true);
+    s.client.vote_on_treasury_proposal(&v3, &tid, &true);
+    assert_eq!(s.client.get_treasury_balance(), 1_000);
+
+    advance(&s.env, EDITING + 1);
+    s.client.vote_on_loan_proposal(&v1, &pid, &true);
+    s.client.vote_on_loan_proposal(&v2, &pid, &true);
+    let borrower_bal = s.token.balance(&borrower);
+    s.client.vote_on_loan_proposal(&v3, &pid, &true); // reaches the threshold; treasury (1000) < 1500
+
+    let prop = s.client.get_loan_proposal(&pid).unwrap();
+    assert_eq!(prop.status, ProposalStatus::ApprovedPendingDisbursement);
+    assert!(emitted(&s.env, "loan_wait"));
+    // No tokens moved, and no loan/active-loan state was created.
+    assert_eq!(s.token.balance(&borrower), borrower_bal);
+    assert_eq!(s.client.get_treasury_balance(), 1_000);
+    assert!(s.client.get_loan(&pid).is_none());
+    assert!(!s.client.get_member(&borrower).unwrap().has_active_loan);
+
+    // Still unfundable until the treasury is refilled.
+    assert_eq!(
+        s.client.try_disburse_approved_loan(&pid),
+        Err(Ok(Error::InsufficientTreasury))
+    );
+
+    // Refill, then the very same proposal can be disbursed.
+    refill_treasury(&s);
+    refill_treasury(&s);
+    assert!(s.client.get_treasury_balance() >= 1_500);
+    s.client.disburse_approved_loan(&pid);
+
+    let prop = s.client.get_loan_proposal(&pid).unwrap();
+    assert_eq!(prop.status, ProposalStatus::Approved);
+    assert_eq!(s.token.balance(&borrower), borrower_bal + 1_500);
+    assert!(s.client.get_member(&borrower).unwrap().has_active_loan);
+    assert_eq!(s.client.get_loan(&pid).unwrap().status, LoanStatus::Active);
+}
+
+#[test]
+fn approved_but_unfundable_treasury_withdrawal_waits_then_executes_after_refill() {
+    // 4 members => treasury 4000, 3 of 4 votes required.
+    let s = setup(4);
+    let p = s.members.get(0).unwrap();
+    let v1 = s.members.get(1).unwrap();
+    let v2 = s.members.get(2).unwrap();
+    let dest = Address::generate(&s.env);
+    let reason = String::from_str(&s.env, "grant");
+
+    // Two withdrawals that each fit today but not both together.
+    let first = s
+        .client
+        .propose_treasury_withdrawal(&p, &2_000, &dest, &reason, &false);
+    let second = s
+        .client
+        .propose_treasury_withdrawal(&p, &2_500, &dest, &reason, &false);
+
+    for voter in [&p, &v1, &v2] {
+        s.client.vote_on_treasury_proposal(voter, &first, &true);
+    }
+    assert_eq!(s.client.get_treasury_balance(), 2_000);
+    assert_eq!(s.token.balance(&dest), 2_000);
+
+    s.client.vote_on_treasury_proposal(&p, &second, &true);
+    s.client.vote_on_treasury_proposal(&v1, &second, &true);
+    s.client.vote_on_treasury_proposal(&v2, &second, &true); // approved, but only 2000 left
+
+    let prop = s.client.get_treasury_proposal(&second).unwrap();
+    assert_eq!(prop.status, ProposalStatus::ApprovedPendingDisbursement);
+    assert!(emitted(&s.env, "tre_wait"));
+    assert_eq!(s.token.balance(&dest), 2_000); // nothing more moved
+    assert_eq!(s.client.get_treasury_balance(), 2_000);
+    assert_eq!(
+        s.client.try_execute_treasury_proposal(&second),
+        Err(Ok(Error::InsufficientTreasury))
+    );
+
+    refill_treasury(&s);
+    refill_treasury(&s);
+    s.client.execute_treasury_proposal(&second);
+
+    let prop = s.client.get_treasury_proposal(&second).unwrap();
+    assert_eq!(prop.status, ProposalStatus::Executed);
+    assert_eq!(s.token.balance(&dest), 4_500);
 // initialize token validation (#115)
 // ---------------------------------------------------------------------------
 
