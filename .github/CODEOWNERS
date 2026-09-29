@@ -1,0 +1,15 @@
+# OurDAO contract code ownership
+# This file ensures contract changes require review from maintainers
+# See https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Default owner for all contract code
+contracts/dao/src/** @ourdao/maintainers
+
+# Money-moving modules require explicit review
+contracts/dao/src/loans.rs @ourdao/maintainers
+contracts/dao/src/treasury.rs @ourdao/maintainers
+contracts/dao/src/membership.rs @ourdao/maintainers
+contracts/dao/src/staking.rs @ourdao/maintainers
+
+# All other contract files
+contracts/ @ourdao/maintainers
