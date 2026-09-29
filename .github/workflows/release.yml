@@ -1,0 +1,81 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  CARGO_TERM_COLOR: always
+  WASM_TARGET: wasm32v1-none
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32v1-none
+
+      - name: Cache cargo registry and build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Build optimized wasm
+        run: cargo build --locked --target ${{ env.WASM_TARGET }} --release
+
+      - name: Compute checksums
+        id: checksums
+        run: |
+          WASM_FILE="target/${WASM_TARGET}/release/ourdao_dao.optimized.wasm"
+          SHA256=$(sha256sum "${WASM_FILE}" | awk '{print $1}')
+          echo "sha256=${SHA256}" >> $GITHUB_OUTPUT
+          echo "wasm_file=${WASM_FILE}" >> $GITHUB_OUTPUT
+          echo "Wasm SHA-256: ${SHA256}"
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: ${{ steps.checksums.outputs.wasm_file }}
+          body: |
+            ## OurDAO Contract Release ${{ github.ref_name }}
+
+            ### Verification
+
+            To verify this release matches the source code:
+
+            ```bash
+            # Download the wasm from this release
+            # Compute its SHA-256 hash
+            sha256sum ourdao_dao.optimized.wasm
+
+            # Compare against the checksum below
+            ```
+
+            **SHA-256 Checksum:**
+            ```
+            ${{ steps.checksums.outputs.sha256 }}
+            ```
+
+            ### Build Info
+
+            - **Source commit:** ${{ github.sha }}
+            - **Tag:** ${{ github.ref_name }}
+            - **Built with:** Rust stable, target ${{ env.WASM_TARGET }}
+            - **Build command:** `cargo build --locked --target ${{ env.WASM_TARGET }} --release`
+
+            ### Deployment
+
+            To deploy this release on a network, see [DEPLOYMENTS.md](./DEPLOYMENTS.md).

@@ -79,6 +79,31 @@ These apply on top of the general rules above, because this is a smart contract:
 - **Don't add a second id counter.** A loan reuses its originating proposal's id (`loan.id == proposal.id`) on purpose — independent counters silently diverge as soon as any proposal is rejected. This invariant is covered by a regression test; if your change touches it, that test should tell you.
 - **Authorization changes need explicit justification.** If your PR adds, removes, or relaxes a `require_auth` call, the description must say exactly who can now do what they couldn't before, and why that's correct.
 
+## Releases and Verification
+
+Releases are published automatically when a tag is pushed (e.g., `v1.0.0`). Each release includes:
+
+- A built, optimized wasm artifact (`ourdao_dao.optimized.wasm`)
+- A SHA-256 checksum in the release notes
+- Build metadata (commit, target, command)
+
+**Member verification:**
+
+To verify a deployed contract matches a GitHub release:
+
+```bash
+# 1. Download the wasm from the release or build it:
+git checkout <TAG>
+stellar contract build --optimize
+
+# 2. Compute its SHA-256:
+sha256sum target/wasm32v1-none/release/ourdao_dao.optimized.wasm
+
+# 3. Compare against the checksum in the release notes
+```
+
+Deployed contract IDs for each network are documented in [DEPLOYMENTS.md](./DEPLOYMENTS.md).
+
 ## What gets closed without review
 
 To keep review time going to real contributions, the following are closed on sight:

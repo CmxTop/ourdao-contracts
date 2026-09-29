@@ -41,6 +41,8 @@ echo "    deployer address: $(stellar keys address "${IDENTITY}")"
 echo "==> Building optimized wasm"
 stellar contract build --optimize
 ls -la "${WASM}"
+WASM_SHA256=$(sha256sum "${WASM}" | awk '{print $1}')
+echo "    SHA-256: ${WASM_SHA256}"
 
 echo "==> Deploying to ${NETWORK}"
 CONTRACT_ID=$(stellar contract deploy \
@@ -54,7 +56,10 @@ echo "==================================================================="
 echo " Deployed OurDAO to ${NETWORK}"
 echo "   contract id: ${CONTRACT_ID}"
 echo "   saved alias: ${ALIAS}"
+echo "   wasm sha256: ${WASM_SHA256}"
 echo "==================================================================="
+echo ""
+echo "To verify this deployment against a release, see DEPLOYMENTS.md"
 echo ""
 echo "Next: initialize the DAO. Example (edit the values for your DAO):"
 cat <<EOF
