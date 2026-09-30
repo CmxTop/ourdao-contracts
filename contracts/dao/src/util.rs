@@ -4,10 +4,16 @@ use crate::error::Error;
 use crate::storage;
 use crate::types::{Member, MemberStatus};
 
-/// Staked tokens above this unit grant one extra unit of voting weight...
+/// Staked tokens are turned into bonus voting weight on a *quadratic* (square
+/// root) curve, and this is the number of staked tokens whose square root is
+/// one unit of that weight: `k` bonus votes cost `STAKE_WEIGHT_UNIT * k * k`
+/// staked tokens (100, 400, 900, 1600, 2500 for 1..=5 votes).
 pub const STAKE_WEIGHT_UNIT: i128 = 100;
-/// ...up to this cap, so a whale can never fully dominate member consensus.
+/// ...capped here, so a whale can never fully dominate member consensus even
+/// after staking far more than every other member combined.
 pub const MAX_STAKE_BONUS: i128 = 5;
+/// The unconditional vote every active member gets, before any stake boost.
+pub const BASE_VOTE_WEIGHT: i128 = 1;
 
 pub fn token_client(env: &Env) -> token::Client<'_> {
     token::Client::new(env, &storage::get_token(env))
@@ -64,10 +70,58 @@ pub fn require_active_member(env: &Env, caller: &Address) -> Result<Member, Erro
     }
 }
 
-/// One base vote per active member, plus a capped bonus for staked commitment.
+/// One base vote per active member, plus a quadratic (square-root) boost for
+/// staked commitment, capped at `MAX_STAKE_BONUS`.
 pub fn voting_weight(env: &Env, who: &Address) -> i128 {
-    let bonus = (storage::get_stake(env, who) / STAKE_WEIGHT_UNIT).min(MAX_STAKE_BONUS);
-    1 + bonus
+    BASE_VOTE_WEIGHT + stake_boost(storage::get_stake(env, who))
+}
+
+/// Bonus votes earned by `staked` under the quadratic staking curve:
+/// `isqrt(staked / STAKE_WEIGHT_UNIT)`, clamped to the `MAX_STAKE_BONUS` cap.
+///
+/// Squaring the boost is what makes the curve sub-linear: doubling a stake
+/// buys only a ~1.41x boost and every additional vote costs 4x the stake of
+/// the one before it, so pooled capital cannot buy proportional control
+/// (issue #182). Weight stays in `[BASE_VOTE_WEIGHT, BASE_VOTE_WEIGHT +
+/// MAX_STAKE_BONUS]` for any stake, including `i128::MAX`.
+pub fn stake_boost(staked: i128) -> i128 {
+    if staked <= 0 {
+        return 0;
+    }
+    // Divide first: `isqrt(floor(x)) == floor(sqrt(x))` for `x >= 0`, so this
+    // is exactly `floor(sqrt(staked / STAKE_WEIGHT_UNIT))` while keeping the
+    // radicand (and every intermediate) far from `i128` overflow.
+    isqrt(staked / STAKE_WEIGHT_UNIT).min(MAX_STAKE_BONUS)
+}
+
+/// Integer square root: the largest `r` with `r * r <= n`, floored. Returns 0
+/// for `n <= 0` (a negative amount has no real square root, and 0 keeps the
+/// caller free of special cases).
+///
+/// Computed digit-by-digit, two bits of the radicand at a time, so no square
+/// is ever evaluated and the full `i128` range is safe.
+pub fn isqrt(n: i128) -> i128 {
+    if n <= 0 {
+        return 0;
+    }
+    let mut remainder = n as u128;
+    // Largest power of four <= u128::MAX, walked down to the radicand's own
+    // most significant bit; each step adds at most one bit to the root.
+    let mut bit: u128 = 1 << 126;
+    while bit > remainder {
+        bit >>= 2;
+    }
+    let mut root: u128 = 0;
+    while bit != 0 {
+        if remainder >= root + bit {
+            remainder -= root + bit;
+            root = (root >> 1) + bit;
+        } else {
+            root >>= 1;
+        }
+        bit >>= 2;
+    }
+    root as i128
 }
 
 /// Ceil-division consensus bar over the active-member base, in basis points:

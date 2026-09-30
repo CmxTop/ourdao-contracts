@@ -54,7 +54,7 @@ Four Soroban-native features beyond the core lending/treasury flow, each fully i
 | Name registry | On-chain **name registry** (name ⇄ address, 1:1) | `registry.rs` |
 | Content-hash metadata | Anchor an IPFS CID / digest to a loan or treasury proposal | `docs.rs` |
 | Commit-reveal voting | **Commit-reveal voting** for private treasury proposals (`sha256(support ++ salt)`, revealed later, tallied through the same code path as public votes) | `privacy.rs` |
-| Staking | **Staking** for a capped voting-weight boost (1 base vote + up to 5 bonus, 100 token units per bonus vote), tracked separately so staked funds are never lent out or counted as treasury | `staking.rs` |
+| Staking | **Staking** for a capped voting-weight boost (1 base vote + up to 5 bonus, on a quadratic curve: the *k*-th bonus vote costs `k² × 100` staked tokens), tracked separately so staked funds are never lent out or counted as treasury | `staking.rs` |
 
 ## Architecture & design decisions
 
@@ -133,7 +133,7 @@ All entrypoints are on the `OurDao` contract (`lib.rs`). Errors are the numeric 
 
 | Method | Description |
 |---|---|
-| `stake(member, amount)` / `unstake(member, amount)` | Boosts voting weight; kept separate from lendable treasury. |
+| `stake(member, amount)` / `unstake(member, amount)` | Boosts voting weight quadratically (`1 + isqrt(stake / 100)`, capped at 6); kept separate from lendable treasury. |
 
 **Name registry**
 
