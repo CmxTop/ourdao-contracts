@@ -60,18 +60,51 @@ jobs:
         if: always()
         run: cargo build --locked --target ${{ env.WASM_TARGET }} --release
 
-  audit:
+  supply-chain:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      checks: write
-    # A separate job so a newly published advisory (which can land against a
-    # pin we already know about and can't move — see the ed25519-dalek note
-    # in the README) surfaces visibly without blocking merges on unrelated PRs.
     steps:
       - uses: actions/checkout@v4
 
-      - name: Audit dependencies
-        uses: rustsec/audit-check@v2
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@cargo-audit
+
+      - name: Reject known dependency advisories
+        run: cargo audit
+
+      - name: Install cargo-deny
+        uses: taiki-e/install-action@cargo-deny
+
+      - name: Check licenses, bans, advisories, and sources
+        run: cargo deny check advisories licenses bans sources
+
+  reproducible-build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@1.98.1
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          targets: wasm32v1-none
+
+      - name: Install Stellar CLI
+        run: cargo install --locked stellar-cli --version 28.0.0
+
+      - name: Build native reference wasm
+        run: |
+          rm -rf target/reproducible-native
+          stellar contract build \
+            --locked \
+            --package ourdao-dao \
+            --optimize=false \
+            --out-dir target/reproducible-native
+
+      - name: Verify container build is byte-for-byte reproducible
+        run: |
+          NATIVE_WASM="$(find target/reproducible-native -maxdepth 1 -type f -name '*.wasm' | sort | head -n 1)"
+          test -n "$NATIVE_WASM"
+          ./scripts/build-reproducible.sh "$NATIVE_WASM"
