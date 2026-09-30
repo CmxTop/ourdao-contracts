@@ -1,0 +1,7 @@
+FROM rust:1.98.1-bookworm
+
+RUN rustup target add wasm32v1-none \
+    && cargo install --locked stellar-cli --version 28.0.0
+
+WORKDIR /workspace
+ENTRYPOINT ["stellar"]
