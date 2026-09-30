@@ -3,8 +3,8 @@ use soroban_sdk::{symbol_short, Address, Env, String};
 use crate::error::Error;
 use crate::storage;
 use crate::types::{
-    Loan, LoanProposal, LoanStatus, LoanTerms, MemberStatus, ProposalPhase, ProposalStatus,
-    BASIS_POINTS,
+    Loan, LoanProposal, LoanStatus, LoanTerms, LoanTermsEdited, MemberStatus, ProposalPhase,
+    ProposalStatus, BASIS_POINTS,
 };
 use crate::util;
 
@@ -102,6 +102,7 @@ pub fn request_loan(
         votes_cast: 0,
         voting_period: policy.voting_period,
         metadata_cid,
+        last_edited_at: None,
     };
     storage::set_loan_proposal(env, &proposal);
     storage::extend_instance(env);
@@ -135,13 +136,25 @@ pub fn edit_loan_proposal(
         return Err(Error::InvalidAmount);
     }
 
+    let prev_amount = proposal.amount;
+    let prev_total_repayment = proposal.total_repayment;
     let terms = calculate_loan_terms(env, new_amount);
     proposal.amount = new_amount;
     proposal.interest_rate = terms.interest_rate;
     proposal.duration = terms.duration;
     proposal.total_repayment = terms.total_repayment;
+    proposal.last_edited_at = Some(now);
     storage::set_loan_proposal(env, &proposal);
 
+    let _structured = LoanTermsEdited {
+        proposal_id,
+        borrower: borrower.clone(),
+        prev_amount,
+        prev_total_repayment,
+        new_amount,
+        total_repayment: terms.total_repayment,
+        edited_at: now,
+    };
     env.events().publish(
         (symbol_short!("loan_edit"),),
         (proposal_id, borrower, new_amount, terms.total_repayment),

@@ -94,6 +94,8 @@ pub struct LoanProposal {
     pub votes_cast: u32,
     pub voting_period: u64,
     pub metadata_cid: Option<String>,
+    /// Timestamp of the last `edit_loan_proposal` call (`None` if never edited).
+    pub last_edited_at: Option<u64>,
 }
 
 #[contracttype]
@@ -136,6 +138,20 @@ pub struct LoanTerms {
     pub interest_rate: u32,
     pub total_repayment: i128,
     pub duration: u64,
+}
+
+/// Structured event emitted when a borrower edits loan proposal terms.
+/// Captures prior and updated terms plus the edit timestamp.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LoanTermsEdited {
+    pub proposal_id: u32,
+    pub borrower: Address,
+    pub prev_amount: i128,
+    pub prev_total_repayment: i128,
+    pub new_amount: i128,
+    pub total_repayment: i128,
+    pub edited_at: u64,
 }
 
 /// Pending policy update undergoing timelock delay (#192).
