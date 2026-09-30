@@ -1,7 +1,16 @@
-FROM rust:1.98.1-bookworm
+FROM stellar/stellar-cli:28.0.0 AS stellar-cli
+FROM rust:1.98.1-trixie
 
-RUN rustup target add wasm32v1-none \
-    && cargo install --locked stellar-cli --version 28.0.0
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        libcap2 \
+        libdbus-1-3 \
+        libsystemd0 \
+        libudev1 \
+    && rm -rf /var/lib/apt/lists/* \
+    && rustup target add wasm32v1-none
+
+COPY --from=stellar-cli /usr/local/bin/stellar /usr/local/bin/stellar
 
 WORKDIR /workspace
 ENTRYPOINT ["stellar"]
