@@ -42,7 +42,7 @@ pub fn is_eligible_for_loan(env: &Env, member: &Address) -> Result<(), Error> {
     }
     let policy = storage::get_policy(env);
     let now = env.ledger().timestamp();
-    if now.saturating_sub(record.join_ledger) < policy.min_membership_duration {
+    if now.saturating_sub(record.join_time) < policy.min_membership_duration {
         return Err(Error::NotEligibleForLoan);
     }
     if record.last_loan_time != 0
@@ -278,7 +278,7 @@ fn approve_and_disburse(env: &Env, proposal: &LoanProposal) -> Result<(), Error>
 
     env.events().publish(
         (symbol_short!("loan_appr"),),
-        (id, proposal.borrower.clone(), proposal.amount, due_time),
+        (id, proposal.borrower.clone(), proposal.amount, loan.due_time),
     );
     Ok(())
 }
@@ -481,15 +481,6 @@ pub(crate) fn distribute_interest(env: &Env, interest: i128) {
     }
     
     // Unconditionally publish the event so the indexer sees the interest paid
-    env.events()
-        .publish((symbol_short!("interest"),), (interest, active));
-}
-    let per_member = interest / active;
-    if per_member == 0 {
-        return;
-    }
-    let current = storage::get_yield_accumulator(env);
-    storage::set_yield_accumulator(env, current + per_member);
     env.events()
         .publish((symbol_short!("interest"),), (interest, active));
 }

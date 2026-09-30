@@ -34,6 +34,37 @@ To verify a deployed contract matches a GitHub release:
    stellar contract info --id <CONTRACT_ID> --network testnet
    ```
 
+## Reproducible build verification
+
+The repository includes `scripts/build-reproducible.sh`, which builds
+`ourdao-dao` inside a pinned Rust/Stellar CLI build container and prints the
+SHA-256 hash of the resulting WASM.
+
+Run the verification with:
+
+```bash
+./scripts/build-reproducible.sh
+```
+
+The script builds the contract twice in separate instances of the pinned build
+container. Each invocation uses an isolated Cargo target directory, then the
+script compares the SHA-256 hashes of the two resulting WASM files. It exits
+non-zero if the bytes differ. CI runs this verification on every pull request.
+
+The reproducible image is built from `Dockerfile.reproducible`, pinned to
+Rust 1.98.1 on Debian Trixie and the official Stellar CLI 28.0.0 binary. The
+local image tag defaults to
+`ourdao-reproducible:rust-1.98.1-stellar-28.0.0`; override only the tag with
+`REPRO_IMAGE` if required:
+
+```bash
+REPRO_IMAGE=ourdao-reproducible:verification \
+  ./scripts/build-reproducible.sh
+```
+
+For release verification, record the printed SHA-256 in the release notes and
+compare it with the downloaded release artifact before deployment.
+
 ## Deployment Process
 
 To deploy a new release:

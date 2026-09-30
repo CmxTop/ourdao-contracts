@@ -13,11 +13,10 @@ pathological combinations explicitly.
 ## Parameter reference
 
 ### `min_membership_duration: u64`
-**Units:** seconds since Unix epoch (note: stored as `join_ledger` — a timestamp,
-not a ledger sequence number; see [#55]).  
+**Units:** seconds since Unix epoch, stored in `Member.join_time`.
 **What it controls:** How long a member must have been in the DAO before
 they can request a loan.  
-**Interactions:** Read against `member.join_ledger` at loan-request time.
+**Interactions:** Read against `member.join_time` at loan-request time.
 Setting this above the typical membership age of your DAO members will make
 lending impossible in practice until enough time has passed.  
 **Suggested start:** `2_592_000` (30 days). Long enough to filter drive-by
@@ -139,11 +138,122 @@ window because `disburse_approved_loan` can only be called after voting closes.
 
 ---
 
+## Interest curve formula and spread
+
+`calculate_loan_terms` computes a utilization-sensitive rate from the requested
+loan amount and the current lendable treasury balance.
+
+Let:
+
+- `A` = requested loan amount
+- `T` = current treasury balance, excluding staked principal
+- `B` = `10_000` basis points
+- `r_min` = `min_interest_rate`
+- `r_max` = `max_interest_rate`
+- `s = r_max - r_min` = configured rate spread
+
+The contract first calculates the loan ratio:
+
+```text
+loan_ratio = min(A * B / T, B)
+```
+
+For an empty treasury, `loan_ratio` is treated as `B`, which quotes the
+maximum rate. The interest rate is then:
+
+```text
+rate = min(r_min + loan_ratio * s / B, r_max)
+total_repayment = A + A * rate / B
+```
+
+With a 5% floor and 20% ceiling, the spread is 1,500 bp:
+
+| Loan / treasury | Ratio (bp) | Quoted rate | Meaning |
+|---:|---:|---:|---|
+| 0% | 0 | 5.00% | Minimum policy rate |
+| 10% | 1,000 | 6.50% | Low utilization |
+| 20% | 2,000 | 8.00% | Typical conservative ceiling |
+| 50% | 5,000 | 12.50% | Material concentration risk |
+| 100%+ | 10,000 | 20.00% | Maximum policy rate |
+
+This curve prices larger treasury exposures more aggressively without adding a
+discontinuous rate jump. Governance should consider both the spread and the
+maximum permitted loan-to-treasury ratio: a high maximum ratio with a narrow
+spread can underprice concentration risk.
+
+---
+
+## Default penalty mechanics
+
+After `due_time + default_grace_period`, anyone may call
+`mark_loan_defaulted`. The contract then:
+
+1. marks the active loan `Defaulted`;
+2. computes `penalty = contribution * default_penalty_bps / 10_000`;
+3. caps the penalty at the member's recorded contribution;
+4. subtracts the penalty from the member and total-contribution accounting; and
+5. clears `has_active_loan`, allowing the member to exit with their reduced
+   economic claim.
+
+The penalty does **not** repay missing principal and is not a substitute for
+liquidity reserves. It is a governance deterrent and loss-allocation tool.
+
+| Penalty | Member contribution | Amount slashed | Contribution remaining |
+|---:|---:|---:|---:|
+| 10% | 1,000 | 100 | 900 |
+| 20% | 1,000 | 200 | 800 |
+| 50% | 1,000 | 500 | 500 |
+| 100% | 1,000 | 1,000 | 0 |
+
+A penalty that leaves contribution below `membership_contribution` also makes
+the member ineligible for another loan until their contribution again satisfies
+policy.
+
+---
+
+## Governance tuning guidelines
+
+When changing lending policy, governors should evaluate parameters as one risk
+budget rather than independently:
+
+1. **Set exposure first.** Choose `max_loan_to_treasury_ratio` from the maximum
+   single-borrower loss the DAO can absorb without impairing operations.
+2. **Price that exposure.** Set the min/max interest spread so the maximum
+   permitted exposure is meaningfully more expensive than a small loan.
+3. **Match duration to liquidity.** Longer loan durations lock treasury
+   liquidity for longer and should generally be paired with lower exposure
+   limits or a larger liquid reserve.
+4. **Treat penalties as deterrence, not collateral.** A contribution penalty
+   can be much smaller than outstanding principal; do not assume it makes the
+   treasury whole.
+5. **Keep grace periods operationally realistic.** The grace period should be
+   long enough for accidental late repayment, but short enough that bad debt is
+   surfaced promptly.
+6. **Model correlated borrowing.** The per-loan ratio limits one loan, not the
+   sum of all active loans. Governance should monitor aggregate outstanding
+   principal off-chain when setting aggressive ratios.
+7. **Stage large parameter changes.** For material changes, publish the proposed
+   before/after values and run the worked calculations above before voting.
+
+### Suggested risk profiles
+
+| Profile | Max loan / treasury | Rate floor → ceiling | Grace period | Default penalty |
+|---|---:|---:|---:|---:|
+| Conservative | 10% | 5% → 25% | 2 days | 30% |
+| Balanced | 20% | 5% → 20% | 3 days | 20% |
+| Growth-oriented | 30% | 4% → 18% | 5 days | 15% |
+
+These are starting points, not guarantees of solvency. A DAO should adapt them
+to treasury volatility, borrower concentration, governance participation, and
+the liquidity needs of its members.
+
+---
+
 ## Pathological combinations
 
 | Combination | Effect |
 |---|---|
-| `max_loan_to_treasury_ratio = 0` | Every loan request fails with `InvalidLoanPolicy` — effectively no lending. Passes `validate_policy`. See [#53]. |
+| `max_loan_to_treasury_ratio = 0` | Rejected by `validate_policy`; governance must choose a non-zero exposure ceiling. |
 | `editing_period + voting_period` > members' patience | Proposals expire before gathering quorum; effective lending rate approaches zero. |
 | `max_loan_duration` >> `default_grace_period` | A defaulted loan can sit in limbo for the full loan duration before anyone can act. |
 | `min_membership_duration` > age of the DAO | No member is old enough to borrow. |

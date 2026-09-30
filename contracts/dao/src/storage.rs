@@ -307,8 +307,7 @@ pub fn get_yield_accumulator(env: &Env) -> i128 {
 pub fn set_yield_accumulator(env: &Env, value: i128) {
     env.storage()
         .instance()
-        .set(&DataKey::YieldAccumulator,
-    YieldRemainder, &value);
+        .set(&DataKey::YieldAccumulator, &value);
 }
 
 pub fn get_yield_snapshot(env: &Env, addr: &Address) -> i128 {
