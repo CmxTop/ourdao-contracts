@@ -19,6 +19,101 @@ const EDITING: u64 = 3 * 24 * 60 * 60;
 const VOTING_PERIOD: u64 = 3 * 24 * 60 * 60;
 const LOAN_DURATION: u64 = 30 * 24 * 60 * 60;
 
+#[soroban_sdk::contracttype]
+#[derive(Clone)]
+enum RejectingTokenKey {
+    Balance(Address),
+    RejectTransfers,
+}
+
+#[soroban_sdk::contract]
+struct RejectingToken;
+
+#[soroban_sdk::contractimpl]
+impl RejectingToken {
+    pub fn mint(env: Env, to: Address, amount: i128) {
+        let key = RejectingTokenKey::Balance(to);
+        let current: i128 = env.storage().instance().get(&key).unwrap_or(0);
+        env.storage().instance().set(&key, &(current + amount));
+    }
+
+    pub fn set_reject_transfers(env: Env, reject: bool) {
+        env.storage()
+            .instance()
+            .set(&RejectingTokenKey::RejectTransfers, &reject);
+    }
+
+    pub fn balance(env: Env, id: Address) -> i128 {
+        env.storage()
+            .instance()
+            .get(&RejectingTokenKey::Balance(id))
+            .unwrap_or(0)
+    }
+
+    pub fn transfer(env: Env, from: Address, to: Address, amount: i128) {
+        let reject: bool = env
+            .storage()
+            .instance()
+            .get(&RejectingTokenKey::RejectTransfers)
+            .unwrap_or(false);
+        if reject {
+            panic!("mock token transfer rejected");
+        }
+        if amount < 0 {
+            panic!("negative transfer");
+        }
+
+        let from_key = RejectingTokenKey::Balance(from);
+        let to_key = RejectingTokenKey::Balance(to);
+        let from_balance: i128 = env.storage().instance().get(&from_key).unwrap_or(0);
+        if from_balance < amount {
+            panic!("insufficient balance");
+        }
+        let to_balance: i128 = env.storage().instance().get(&to_key).unwrap_or(0);
+        env.storage()
+            .instance()
+            .set(&from_key, &(from_balance - amount));
+        env.storage().instance().set(&to_key, &(to_balance + amount));
+    }
+}
+
+struct RejectingSetup<'a> {
+    env: Env,
+    client: OurDaoClient<'a>,
+    token: RejectingTokenClient<'a>,
+    members: Vec<Address>,
+}
+
+fn rejecting_setup(num_members: u32) -> RejectingSetup<'static> {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let token_id = env.register(RejectingToken, ());
+    let token = RejectingTokenClient::new(&env, &token_id);
+    let admin = Address::generate(&env);
+    let contract_id = env.register(OurDao, ());
+    let client = OurDaoClient::new(&env, &contract_id);
+
+    let mut admins = Vec::new(&env);
+    admins.push_back(admin);
+    client.initialize(&admins, &5_100u32, &FEE, &token_id, &policy());
+
+    let mut members = Vec::new(&env);
+    for _ in 0..num_members {
+        let member = Address::generate(&env);
+        token.mint(&member, &MINT);
+        client.register_member(&member);
+        members.push_back(member);
+    }
+
+    RejectingSetup {
+        env,
+        client,
+        token,
+        members,
+    }
+}
+
 struct Setup<'a> {
     env: Env,
     client: OurDaoClient<'a>,
@@ -1281,12 +1376,13 @@ fn bench_exit_dao_scaling() {
         let cpu_after = s.env.budget().cpu_instruction_cost();
         
         let cost = cpu_after - cpu_before;
-        println!("exit_dao cost at size {}: {}", size, cost);
-        
-        // Fail if cost scales poorly (O(n) check)
-        if size == 1000 && cost > 50_000_000 {
-            println!("REGRESSION: exit_dao cost {} exceeds O(1) bound", cost);
-        }
+
+        // Fail if cost scales poorly (O(n) check). Keep this no_std-compatible
+        // instead of printing from the contract crate.
+        assert!(
+            size != 1000 || cost <= 50_000_000,
+            "exit_dao cost exceeds O(1) bound"
+        );
     }
 }
 
@@ -1415,6 +1511,7 @@ fn approved_but_unfundable_treasury_withdrawal_waits_then_executes_after_refill(
     assert_eq!(s.token.balance(&dest), 4_500);
 }
 
+// initialize token validation (#115)
 // ---------------------------------------------------------------------------
 
 fn init_with_token(env: &Env, token: &Address) -> Result<(), Error> {
@@ -1532,6 +1629,48 @@ fn loan_proposal_quorum_higher_threshold_requires_more_votes() {
     assert_eq!(
         s.client.get_loan_proposal(&pid).unwrap().status,
         ProposalStatus::Approved
+#[test]
+fn rejected_register_member_transfer_rolls_back_all_membership_state() {
+    let s = rejecting_setup(0);
+    let member = Address::generate(&s.env);
+    s.token.mint(&member, &MINT);
+    s.token.set_reject_transfers(&true);
+
+    let result = s.client.try_register_member(&member);
+    assert!(result.is_err());
+
+    assert_eq!(s.client.get_total_members(), 0);
+    assert_eq!(s.client.get_active_members(), 0);
+    assert!(!s.client.is_member(&member));
+    assert!(s.client.get_member(&member).is_none());
+    assert_eq!(s.token.balance(&s.client.address), 0);
+}
+
+#[test]
+fn rejected_stake_transfer_leaves_stake_storage_unchanged() {
+    let s = rejecting_setup(1);
+    let member = s.members.get(0).unwrap();
+    let dao_balance_before = s.token.balance(&s.client.address);
+
+    s.token.set_reject_transfers(&true);
+    let result = s.client.try_stake(&member, &500);
+    assert!(result.is_err());
+
+    assert_eq!(s.client.get_stake(&member), 0);
+    let total_staked = s
+        .env
+        .as_contract(&s.client.address, || crate::storage::get_total_staked(&s.env));
+    assert_eq!(total_staked, 0);
+    assert_eq!(s.token.balance(&s.client.address), dao_balance_before);
+    let has_stake_time = s.env.as_contract(&s.client.address, || {
+        s.env
+            .storage()
+            .persistent()
+            .has(&crate::storage::DataKey::StakeTime(member.clone()))
+    });
+    assert!(
+        !has_stake_time,
+        "stake timestamp must roll back with the rejected transfer"
     );
 }
 
@@ -1749,4 +1888,43 @@ fn proposal_creation_rejects_invalid_cid() {
     );
     let err_long = s.client.try_request_loan(&borrower, &500, &Some(long_cid));
     assert_eq!(err_long, Err(Ok(Error::DocumentTooLarge)));
+}
+fn rejected_treasury_transfer_rolls_back_approval_vote_and_execution_state() {
+    let s = rejecting_setup(3);
+    let proposer = s.members.get(0).unwrap();
+    let voter_one = s.members.get(1).unwrap();
+    let voter_two = s.members.get(2).unwrap();
+    let destination = Address::generate(&s.env);
+
+    let proposal_id = s.client.propose_treasury_withdrawal(
+        &proposer,
+        &500,
+        &destination,
+        &String::from_str(&s.env, "rollback test"),
+        &false,
+    );
+
+    s.client
+        .vote_on_treasury_proposal(&voter_one, &proposal_id, &true);
+    let before = s.client.get_treasury_proposal(&proposal_id).unwrap();
+    assert_eq!(before.status, ProposalStatus::Pending);
+    assert_eq!(before.for_votes, 1);
+    assert_eq!(before.votes_cast, 1);
+
+    s.token.set_reject_transfers(&true);
+    let result = s
+        .client
+        .try_vote_on_treasury_proposal(&voter_two, &proposal_id, &true);
+    assert!(result.is_err());
+
+    let after = s.client.get_treasury_proposal(&proposal_id).unwrap();
+    assert_eq!(after, before, "proposal changes must roll back");
+    let has_vote = s.env.as_contract(&s.client.address, || {
+        crate::storage::has_treasury_voted(&s.env, proposal_id, &voter_two)
+    });
+    assert!(
+        !has_vote,
+        "vote marker must not survive a rejected execution transfer"
+    );
+    assert_eq!(s.token.balance(&destination), 0);
 }
