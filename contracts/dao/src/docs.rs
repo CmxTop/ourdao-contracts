@@ -53,7 +53,7 @@ pub fn attach_document(
     if let ProposalKind::Loan = kind {
         if let Some(p) = storage::get_loan_proposal(env, proposal_id) {
             if p.phase != ProposalPhase::Editing {
-                return Err(Error::NotEditingPhase);
+                return Err(Error::NotInEditingPhase);
             }
         }
     }

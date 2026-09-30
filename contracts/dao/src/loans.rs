@@ -1,4 +1,4 @@
-use soroban_sdk::{symbol_short, Address, Env};
+use soroban_sdk::{symbol_short, Address, Env, String};
 
 use crate::error::Error;
 use crate::storage;
@@ -42,7 +42,7 @@ pub fn is_eligible_for_loan(env: &Env, member: &Address) -> Result<(), Error> {
     }
     let policy = storage::get_policy(env);
     let now = env.ledger().timestamp();
-    if now.saturating_sub(record.join_ledger) < policy.min_membership_duration {
+    if now.saturating_sub(record.join_time) < policy.min_membership_duration {
         return Err(Error::NotEligibleForLoan);
     }
     if record.last_loan_time != 0
@@ -53,13 +53,26 @@ pub fn is_eligible_for_loan(env: &Env, member: &Address) -> Result<(), Error> {
     Ok(())
 }
 
-pub fn request_loan(env: &Env, borrower: Address, amount: i128) -> Result<u32, Error> {
+pub fn request_loan(
+    env: &Env,
+    borrower: Address,
+    amount: i128,
+    metadata_cid: Option<String>,
+) -> Result<u32, Error> {
     util::require_initialized(env)?;
     util::require_not_paused(env)?;
     util::require_active_member(env, &borrower)?;
 
     if amount <= 0 {
         return Err(Error::InvalidAmount);
+    }
+    if let Some(ref cid) = metadata_cid {
+        if cid.is_empty() {
+            return Err(Error::InvalidMetadataCid);
+        }
+        if cid.len() > 64 {
+            return Err(Error::DocumentTooLarge);
+        }
     }
     is_eligible_for_loan(env, &borrower)?;
 
@@ -88,6 +101,7 @@ pub fn request_loan(env: &Env, borrower: Address, amount: i128) -> Result<u32, E
         against_votes: 0,
         votes_cast: 0,
         voting_period: policy.voting_period,
+        metadata_cid,
     };
     storage::set_loan_proposal(env, &proposal);
     storage::extend_instance(env);
@@ -191,9 +205,15 @@ pub fn vote_on_loan_proposal(
     env.events()
         .publish((symbol_short!("loan_vote"),), (proposal_id, voter, support));
 
+    let policy = storage::get_policy(env);
+    let threshold = if policy.quorum_bps > 0 {
+        policy.quorum_bps
+    } else {
+        storage::get_threshold(env)
+    };
     let required = util::required_votes(
         storage::get_active_members(env),
-        storage::get_threshold(env),
+        threshold,
     );
     if proposal.for_votes >= required && proposal.status == ProposalStatus::Pending {
         proposal.status = ProposalStatus::ApprovedPendingDisbursement;
@@ -278,7 +298,7 @@ fn approve_and_disburse(env: &Env, proposal: &LoanProposal) -> Result<(), Error>
 
     env.events().publish(
         (symbol_short!("loan_appr"),),
-        (id, proposal.borrower.clone(), proposal.amount, due_time),
+        (id, proposal.borrower.clone(), proposal.amount, loan.due_time),
     );
     Ok(())
 }
@@ -481,15 +501,6 @@ pub(crate) fn distribute_interest(env: &Env, interest: i128) {
     }
     
     // Unconditionally publish the event so the indexer sees the interest paid
-    env.events()
-        .publish((symbol_short!("interest"),), (interest, active));
-}
-    let per_member = interest / active;
-    if per_member == 0 {
-        return;
-    }
-    let current = storage::get_yield_accumulator(env);
-    storage::set_yield_accumulator(env, current + per_member);
     env.events()
         .publish((symbol_short!("interest"),), (interest, active));
 }
