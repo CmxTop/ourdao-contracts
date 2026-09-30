@@ -75,6 +75,7 @@ fn approved_but_unfundable_treasury_withdrawal_waits_then_executes_after_refill(
     assert_eq!(s.token.balance(&dest), 4_500);
 }
 
+#[test]
 fn rejected_treasury_transfer_rolls_back_approval_vote_and_execution_state() {
     let s = rejecting_setup(3);
     let proposer = s.members.get(0).unwrap();
