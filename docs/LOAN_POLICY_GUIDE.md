@@ -13,11 +13,10 @@ pathological combinations explicitly.
 ## Parameter reference
 
 ### `min_membership_duration: u64`
-**Units:** seconds since Unix epoch (note: stored as `join_ledger` — a timestamp,
-not a ledger sequence number; see [#55]).  
+**Units:** seconds since Unix epoch, stored in `Member.join_time`.
 **What it controls:** How long a member must have been in the DAO before
 they can request a loan.  
-**Interactions:** Read against `member.join_ledger` at loan-request time.
+**Interactions:** Read against `member.join_time` at loan-request time.
 Setting this above the typical membership age of your DAO members will make
 lending impossible in practice until enough time has passed.  
 **Suggested start:** `2_592_000` (30 days). Long enough to filter drive-by
@@ -254,7 +253,7 @@ the liquidity needs of its members.
 
 | Combination | Effect |
 |---|---|
-| `max_loan_to_treasury_ratio = 0` | Every loan request fails with `InvalidLoanPolicy` — effectively no lending. Passes `validate_policy`. See [#53]. |
+| `max_loan_to_treasury_ratio = 0` | Rejected by `validate_policy`; governance must choose a non-zero exposure ceiling. |
 | `editing_period + voting_period` > members' patience | Proposals expire before gathering quorum; effective lending rate approaches zero. |
 | `max_loan_duration` >> `default_grace_period` | A defaulted loan can sit in limbo for the full loan duration before anyone can act. |
 | `min_membership_duration` > age of the DAO | No member is old enough to borrow. |
