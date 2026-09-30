@@ -1,13 +1,9 @@
-extern crate std;
-use super::common::*;
-use crate::admin::TIMELOCK_DURATION;
-use crate::privacy::compute_commitment;
-use crate::storage::ProposalKind;
-use crate::types::{LoanPolicy, LoanStatus, MemberStatus, ProposalPhase, ProposalStatus};
-use crate::{Error, OurDao, OurDaoClient};
-use soroban_sdk::testutils::{Address as _, Events as _, Ledger as _};
+use soroban_sdk::testutils::Events as _;
 use soroban_sdk::xdr::{ContractEventBody, ScVal};
-use soroban_sdk::{token, Address, Bytes, BytesN, Env, String, Vec};
+
+use super::common::*;
+use crate::types::ProposalStatus;
+use crate::Error;
 
 #[test]
 fn staking_boosts_voting_weight() {
@@ -33,7 +29,6 @@ fn staking_boosts_voting_weight() {
     assert_eq!(s.token.balance(&staker), before + 200);
     assert_eq!(s.client.get_stake(&staker), 0);
 }
-
 
 #[test]
 fn rejected_stake_transfer_leaves_stake_storage_unchanged() {
@@ -63,7 +58,7 @@ fn rejected_stake_transfer_leaves_stake_storage_unchanged() {
     );
 }
 
-
+// Issue #193: StakingRewardClaimed event on yield distribution
 #[test]
 fn claim_rewards_emits_staking_reward_claimed_event_and_updates_snapshot() {
     let s = setup(3);
@@ -123,9 +118,3 @@ fn claim_rewards_emits_staking_reward_claimed_event_and_updates_snapshot() {
     assert_eq!(s.client.get_pending_yield(&v1), 0);
     assert_eq!(s.client.try_claim_rewards(&v1), Err(Ok(Error::NothingToClaim)));
 }
-
-// ===========================================================================
-// Issue #194: Custom metadata CID attachment to loan proposals
-// ===========================================================================
-
-

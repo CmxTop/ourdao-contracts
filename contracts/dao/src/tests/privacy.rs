@@ -1,13 +1,11 @@
-extern crate std;
+use soroban_sdk::testutils::Address as _;
+use soroban_sdk::{Address, BytesN, String};
+
 use super::common::*;
-use crate::admin::TIMELOCK_DURATION;
 use crate::privacy::compute_commitment;
 use crate::storage::ProposalKind;
-use crate::types::{LoanPolicy, LoanStatus, MemberStatus, ProposalPhase, ProposalStatus};
-use crate::{Error, OurDao, OurDaoClient};
-use soroban_sdk::testutils::{Address as _, Events as _, Ledger as _};
-use soroban_sdk::xdr::{ContractEventBody, ScVal};
-use soroban_sdk::{token, Address, Bytes, BytesN, Env, String, Vec};
+use crate::types::ProposalStatus;
+use crate::Error;
 
 #[test]
 fn commit_reveal_private_treasury_vote() {
@@ -51,7 +49,6 @@ fn commit_reveal_private_treasury_vote() {
     assert_eq!(s.token.balance(&dest), 600);
 }
 
-
 #[test]
 fn commit_vote_cannot_be_overwritten() {
     let s = setup(2);
@@ -77,7 +74,6 @@ fn commit_vote_cannot_be_overwritten() {
     s.client.reveal_treasury_vote(&voter, &pid, &true, &salt);
 }
 
-
 #[test]
 fn has_voted_treasury_commit_reveal() {
     let s = setup(3);
@@ -99,7 +95,3 @@ fn has_voted_treasury_commit_reveal() {
     s.client.commit_treasury_vote(&v1, &pid, &commitment);
     assert!(s.client.has_voted(&ProposalKind::Treasury, &pid, &v1));
 }
-
-// ==================== issue #3: name validation ====================
-
-

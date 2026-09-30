@@ -1,13 +1,8 @@
-extern crate std;
+use soroban_sdk::testutils::{Address as _, Events as _};
+use soroban_sdk::{Address, String};
+
 use super::common::*;
-use crate::admin::TIMELOCK_DURATION;
-use crate::privacy::compute_commitment;
-use crate::storage::ProposalKind;
-use crate::types::{LoanPolicy, LoanStatus, MemberStatus, ProposalPhase, ProposalStatus};
-use crate::{Error, OurDao, OurDaoClient};
-use soroban_sdk::testutils::{Address as _, Events as _, Ledger as _};
-use soroban_sdk::xdr::{ContractEventBody, ScVal};
-use soroban_sdk::{token, Address, Bytes, BytesN, Env, String, Vec};
+use crate::Error;
 
 #[test]
 fn name_registry() {
@@ -23,7 +18,6 @@ fn name_registry() {
     let res = s.client.try_register_name(&other, &name);
     assert_eq!(res, Err(Ok(Error::NameTaken)));
 }
-
 
 #[test]
 fn releasing_a_name_emits_an_event() {
@@ -49,7 +43,7 @@ fn releasing_a_name_emits_an_event() {
     assert_eq!(s.env.events().all().events().len(), 1);
 }
 
-
+// ==================== issue #3: name validation ====================
 #[test]
 fn name_too_short_rejected() {
     let s = setup(1);
@@ -58,7 +52,6 @@ fn name_too_short_rejected() {
     let res = s.client.try_register_name(&owner, &name);
     assert_eq!(res, Err(Ok(Error::InvalidName)));
 }
-
 
 #[test]
 fn name_too_long_rejected() {
@@ -70,7 +63,6 @@ fn name_too_long_rejected() {
     assert_eq!(res, Err(Ok(Error::InvalidName)));
 }
 
-
 #[test]
 fn name_uppercase_rejected() {
     let s = setup(1);
@@ -79,7 +71,6 @@ fn name_uppercase_rejected() {
     let res = s.client.try_register_name(&owner, &name);
     assert_eq!(res, Err(Ok(Error::InvalidName)));
 }
-
 
 #[test]
 fn name_dot_or_space_rejected() {
@@ -94,7 +85,6 @@ fn name_dot_or_space_rejected() {
     let res = s.client.try_register_name(&owner, &space);
     assert_eq!(res, Err(Ok(Error::InvalidName)));
 }
-
 
 #[test]
 fn name_leading_trailing_separator_rejected() {
@@ -118,7 +108,6 @@ fn name_leading_trailing_separator_rejected() {
     assert_eq!(res, Err(Ok(Error::InvalidName)));
 }
 
-
 #[test]
 fn name_valid_with_digits_and_separators() {
     let s = setup(1);
@@ -127,7 +116,3 @@ fn name_valid_with_digits_and_separators() {
     s.client.register_name(&owner, &name);
     assert_eq!(s.client.resolve_name(&name), Some(owner.clone()));
 }
-
-// ==================== issue #4: yield accumulator ====================
-
-

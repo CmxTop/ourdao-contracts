@@ -1,7 +1,10 @@
-pub mod common;
-pub mod loans;
-pub mod membership;
-pub mod privacy;
-pub mod registry;
-pub mod staking;
-pub mod treasury;
+mod admin;
+mod common;
+mod docs;
+mod loans;
+mod membership;
+mod privacy;
+mod properties;
+mod registry;
+mod staking;
+mod treasury;

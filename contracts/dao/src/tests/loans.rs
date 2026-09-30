@@ -1,13 +1,14 @@
 extern crate std;
-use super::common::*;
-use crate::admin::TIMELOCK_DURATION;
-use crate::privacy::compute_commitment;
-use crate::storage::ProposalKind;
-use crate::types::{LoanPolicy, LoanStatus, MemberStatus, ProposalPhase, ProposalStatus};
-use crate::{Error, OurDao, OurDaoClient};
+
 use soroban_sdk::testutils::{Address as _, Events as _, Ledger as _};
 use soroban_sdk::xdr::{ContractEventBody, ScVal};
-use soroban_sdk::{token, Address, Bytes, BytesN, Env, String, Vec};
+use soroban_sdk::{Address, String};
+
+use super::common::*;
+use crate::admin::TIMELOCK_DURATION;
+use crate::storage::ProposalKind;
+use crate::types::{LoanStatus, ProposalPhase, ProposalStatus};
+use crate::Error;
 
 #[test]
 fn full_loan_lifecycle() {
@@ -61,7 +62,6 @@ fn full_loan_lifecycle() {
     assert_eq!(s.client.get_pending_yield(&v1), 0);
 }
 
-
 #[test]
 fn loan_rejected_when_ineligible_active_loan() {
     let s = setup(3);
@@ -79,7 +79,6 @@ fn loan_rejected_when_ineligible_active_loan() {
     assert_eq!(res, Err(Ok(Error::HasActiveLoan)));
 }
 
-
 #[test]
 fn loan_exceeds_treasury_ratio() {
     let s = setup(3); // treasury = 3000, max ratio 50% => max loan 1500
@@ -87,7 +86,6 @@ fn loan_exceeds_treasury_ratio() {
     let res = s.client.try_request_loan(&borrower, &2_000, &None);
     assert_eq!(res, Err(Ok(Error::ExceedsTreasuryRatio)));
 }
-
 
 #[test]
 fn loan_default_before_due_rejected() {
@@ -109,7 +107,6 @@ fn loan_default_before_due_rejected() {
     let missing = s.client.try_mark_loan_defaulted(&99);
     assert_eq!(missing, Err(Ok(Error::LoanNotFound)));
 }
-
 
 #[test]
 fn loan_default_applies_penalty_and_frees_borrower() {
@@ -138,7 +135,6 @@ fn loan_default_applies_penalty_and_frees_borrower() {
     assert_eq!(member.contribution, contribution_before - expected_penalty);
 }
 
-
 #[test]
 fn defaulted_loan_is_terminal() {
     let s = setup(3);
@@ -161,7 +157,6 @@ fn defaulted_loan_is_terminal() {
     let repay = s.client.try_repay_loan(&borrower, &0);
     assert_eq!(repay, Err(Ok(Error::LoanNotActive)));
 }
-
 
 #[test]
 fn defaulted_borrower_can_exit() {
@@ -187,7 +182,6 @@ fn defaulted_borrower_can_exit() {
     s.client.exit_dao(&borrower);
     assert!(!s.client.is_member(&borrower));
 }
-
 
 #[test]
 fn loan_id_matches_its_originating_proposal_id() {
@@ -220,7 +214,7 @@ fn loan_id_matches_its_originating_proposal_id() {
     assert_eq!(loan.borrower, borrower);
 }
 
-
+// ==================== issue #1: expire_loan_proposal ====================
 #[test]
 fn expired_proposal_shows_expired_phase_in_view() {
     let s = setup(3);
@@ -242,7 +236,6 @@ fn expired_proposal_shows_expired_phase_in_view() {
     assert_eq!(prop.status, ProposalStatus::Rejected);
 }
 
-
 #[test]
 fn expire_before_deadline_rejected() {
     let s = setup(3);
@@ -253,7 +246,6 @@ fn expire_before_deadline_rejected() {
     let res = s.client.try_expire_loan_proposal(&pid);
     assert_eq!(res, Err(Ok(Error::ProposalNotExpired)));
 }
-
 
 #[test]
 fn double_expire_is_noop() {
@@ -275,8 +267,6 @@ fn double_expire_is_noop() {
 }
 
 // ==================== issue #2: has_voted view ====================
-
-
 #[test]
 fn has_voted_loan_before_and_after() {
     let s = setup(3);
@@ -290,7 +280,7 @@ fn has_voted_loan_before_and_after() {
     assert!(s.client.has_voted(&ProposalKind::Loan, &pid, &v1));
 }
 
-
+// ==================== issue #5: partial loan repayment ====================
 #[test]
 fn partial_repayment_then_full() {
     let s = setup(3);
@@ -332,7 +322,6 @@ fn partial_repayment_then_full() {
     assert!(!s.client.get_member(&borrower).unwrap().has_active_loan);
 }
 
-
 #[test]
 fn partial_repayment_overpay_rejected() {
     let s = setup(3);
@@ -365,7 +354,6 @@ fn partial_repayment_overpay_rejected() {
     assert_eq!(s.client.get_loan(&pid).unwrap().amount_repaid, 0);
 }
 
-
 #[test]
 fn partial_repayments_sum_to_exact_total_marks_repaid() {
     let s = setup(3);
@@ -394,7 +382,6 @@ fn partial_repayments_sum_to_exact_total_marks_repaid() {
     assert_eq!(loan.amount_repaid, total);
     assert!(!s.client.get_member(&borrower).unwrap().has_active_loan);
 }
-
 
 #[test]
 fn partial_payment_overdue_loan_still_defaultable() {
@@ -430,7 +417,6 @@ fn partial_payment_overdue_loan_still_defaultable() {
     assert_eq!(res, Err(Ok(Error::LoanNotActive)));
 }
 
-
 #[test]
 fn exit_blocked_while_partial_balance_remains() {
     let s = setup(3);
@@ -455,9 +441,6 @@ fn exit_blocked_while_partial_balance_remains() {
     s.client.exit_dao(&borrower);
     assert!(!s.client.is_member(&borrower));
 }
-
-// ==================== issue: total_contributions ====================
-
 
 #[test]
 fn approved_but_unfundable_loan_waits_then_disburses_after_refill() {
@@ -516,7 +499,6 @@ fn approved_but_unfundable_loan_waits_then_disburses_after_refill() {
     assert_eq!(s.client.get_loan(&pid).unwrap().status, LoanStatus::Active);
 }
 
-
 #[test]
 fn loan_proposal_uses_dynamic_quorum_threshold() {
     // 4 members. Threshold set to 5100 (needs 3 votes normally).
@@ -542,7 +524,6 @@ fn loan_proposal_uses_dynamic_quorum_threshold() {
     let prop = s.client.get_loan_proposal(&pid).unwrap();
     assert_eq!(prop.status, ProposalStatus::Approved);
 }
-
 
 #[test]
 fn loan_proposal_quorum_higher_threshold_requires_more_votes() {
@@ -612,11 +593,7 @@ fn loan_proposal_backwards_compatible_with_zero_quorum_bps() {
     );
 }
 
-// ===========================================================================
-// Issue #192: Timelock delay for administrative policy changes
-// ===========================================================================
-
-
+// Issue #194: Custom metadata CID attachment to loan proposals
 #[test]
 fn proposal_creation_with_and_without_cid() {
     let s = setup(2);
@@ -643,7 +620,6 @@ fn proposal_creation_with_and_without_cid() {
     assert_eq!(prop_v1.metadata_cid, Some(cid_v1));
 }
 
-
 #[test]
 fn proposal_creation_rejects_invalid_cid() {
     let s = setup(2);
@@ -662,19 +638,6 @@ fn proposal_creation_rejects_invalid_cid() {
     let err_long = s.client.try_request_loan(&borrower, &500, &Some(long_cid));
     assert_eq!(err_long, Err(Ok(Error::DocumentTooLarge)));
 }
-
-#[test]
-fn content_hash_document() {
-    let s = setup(1);
-    let member = s.members.get(0).unwrap();
-    let pid = s.client.request_loan(&member, &500, &None);
-
-    let cid = Bytes::from_array(&s.env, b"QmExampleCid1234567890");
-    s.client
-        .attach_document(&member, &ProposalKind::Loan, &pid, &cid);
-    assert_eq!(s.client.get_document(&ProposalKind::Loan, &pid), Some(cid));
-}
-
 
 #[test]
 fn edit_loan_proposal_emits_loan_edit_event() {
@@ -708,4 +671,3 @@ fn edit_loan_proposal_emits_loan_edit_event() {
     let expected = s.client.calculate_loan_terms(&600);
     assert_eq!(after.total_repayment, expected.total_repayment);
 }
-

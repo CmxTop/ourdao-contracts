@@ -1,13 +1,9 @@
-extern crate std;
+use soroban_sdk::testutils::Address as _;
+use soroban_sdk::{Address, String};
+
 use super::common::*;
-use crate::admin::TIMELOCK_DURATION;
-use crate::privacy::compute_commitment;
-use crate::storage::ProposalKind;
-use crate::types::{LoanPolicy, LoanStatus, MemberStatus, ProposalPhase, ProposalStatus};
-use crate::{Error, OurDao, OurDaoClient};
-use soroban_sdk::testutils::{Address as _, Events as _, Ledger as _};
-use soroban_sdk::xdr::{ContractEventBody, ScVal};
-use soroban_sdk::{token, Address, Bytes, BytesN, Env, String, Vec};
+use crate::types::ProposalStatus;
+use crate::Error;
 
 #[test]
 fn treasury_withdrawal_open_vote() {
@@ -31,7 +27,6 @@ fn treasury_withdrawal_open_vote() {
     assert_eq!(done.status, ProposalStatus::Executed);
     assert_eq!(s.token.balance(&dest), 600);
 }
-
 
 #[test]
 fn approved_but_unfundable_treasury_withdrawal_waits_then_executes_after_refill() {
@@ -80,10 +75,6 @@ fn approved_but_unfundable_treasury_withdrawal_waits_then_executes_after_refill(
     assert_eq!(s.token.balance(&dest), 4_500);
 }
 
-// initialize token validation (#115)
-// ---------------------------------------------------------------------------
-
-
 #[test]
 fn rejected_treasury_transfer_rolls_back_approval_vote_and_execution_state() {
     let s = rejecting_setup(3);
@@ -124,5 +115,3 @@ fn rejected_treasury_transfer_rolls_back_approval_vote_and_execution_state() {
     );
     assert_eq!(s.token.balance(&destination), 0);
 }
-
-
