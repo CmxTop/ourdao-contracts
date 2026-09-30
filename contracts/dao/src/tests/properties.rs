@@ -3,6 +3,7 @@ use soroban_sdk::testutils::Address as _;
 use soroban_sdk::{token, Address, Env, Vec};
 
 use super::common::*;
+use crate::util::{MAX_STAKE_BONUS, STAKE_WEIGHT_UNIT};
 use crate::{OurDao, OurDaoClient};
 
 // ==================== issue #7: property tests ====================
@@ -67,9 +68,10 @@ proptest! {
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(80))]
 
-    /// One base vote plus up to `MAX_STAKE_BONUS` (5) bonus votes at
-    /// `STAKE_WEIGHT_UNIT` (100) tokens per bonus vote — so weight is
-    /// always in `[1, 6]` for any non-negative stake.
+    /// One base vote plus a square-root boost of up to `MAX_STAKE_BONUS` (5)
+    /// bonus votes — `k` of them cost `STAKE_WEIGHT_UNIT * k^2` staked tokens
+    /// (#182) — so weight is always in `[1, 6]` for any non-negative stake,
+    /// up to and including `i128::MAX`.
     #[test]
     fn voting_weight_stays_in_bounds(stake in 0i128..=i128::MAX) {
         let env = Env::default();
@@ -100,6 +102,60 @@ proptest! {
             (wa, wb)
         });
         prop_assert!(wb >= wa);
+    }
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(80))]
+
+    /// The quadratic curve (#182) is flat inside each band: wherever a stake
+    /// lands, its boost is the band index `k`, both edges of the band
+    /// (`k^2` and `(k + 1)^2 - 1` units) earn `k`, and crossing into the next
+    /// band is the only thing that buys another vote.
+    #[test]
+    fn boost_is_constant_within_each_square_band(stake in 0i128..=AMOUNT_BOUND) {
+        let band = crate::util::stake_boost(stake);
+        let low = STAKE_WEIGHT_UNIT * band * band;
+        let next = STAKE_WEIGHT_UNIT * (band + 1) * (band + 1);
+
+        prop_assert!(stake >= low, "stake below the {band}th band");
+        prop_assert_eq!(crate::util::stake_boost(low), band);
+        if band < MAX_STAKE_BONUS {
+            prop_assert!(stake < next);
+            prop_assert_eq!(crate::util::stake_boost(next - 1), band);
+            prop_assert_eq!(crate::util::stake_boost(next), band + 1);
+        }
+    }
+
+    /// Past the last band the boost is pinned at the cap, however much more
+    /// is staked — the whale ceiling.
+    #[test]
+    fn boost_saturates_at_the_cap(surplus in 0i128..=AMOUNT_BOUND) {
+        let stake = STAKE_WEIGHT_UNIT * MAX_STAKE_BONUS * MAX_STAKE_BONUS + surplus;
+        prop_assert_eq!(crate::util::stake_boost(stake), MAX_STAKE_BONUS);
+    }
+
+    /// Quadratic scaling is never more generous than the linear rule it
+    /// replaces: `isqrt(x) <= x` for every `x`, so no stake earns more bonus
+    /// votes than `stake / STAKE_WEIGHT_UNIT` did, and a large one earns far
+    /// fewer.
+    #[test]
+    fn boost_never_exceeds_the_linear_rule(stake in 0i128..=AMOUNT_BOUND) {
+        let linear = (stake / STAKE_WEIGHT_UNIT).min(MAX_STAKE_BONUS);
+        prop_assert!(crate::util::stake_boost(stake) <= linear);
+    }
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(80))]
+
+    /// `isqrt` never rounds up and never drops a whole step: it is exact on a
+    /// perfect square, one below either square it lands on the nearer root.
+    #[test]
+    fn isqrt_never_rounds_up(r in 1i128..=1i128 << 60) {
+        prop_assert_eq!(crate::util::isqrt(r * r), r);
+        prop_assert_eq!(crate::util::isqrt(r * r - 1), r - 1);
+        prop_assert_eq!(crate::util::isqrt(r * r + 2 * r), r);
     }
 }
 
