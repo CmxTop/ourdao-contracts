@@ -124,6 +124,24 @@ pub fn isqrt(n: i128) -> i128 {
     root as i128
 }
 
+/// Returns the current voting weight for `who`. Readable on-chain so clients
+/// and frontends can display voting power without parsing source code.
+pub fn get_voting_weight(env: &Env, who: &Address) -> i128 {
+    voting_weight(env, who)
+}
+
+/// The amount of stake required per additional unit of voting bonus.
+/// Stakes below this threshold carry no bonus; each full unit grants +1.
+pub fn get_stake_weight_unit() -> i128 {
+    STAKE_WEIGHT_UNIT
+}
+
+/// Maximum bonus votes a member can accumulate through staking.
+/// Caps the influence of large token holders over member consensus.
+pub fn get_max_stake_bonus() -> i128 {
+    MAX_STAKE_BONUS
+}
+
 /// Ceil-division consensus bar over the active-member base, in basis points:
 /// `(base * threshold + BP - 1) / BP`.
 pub fn required_votes(active_members: u32, threshold_bps: u32) -> i128 {

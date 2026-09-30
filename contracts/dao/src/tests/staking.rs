@@ -338,3 +338,67 @@ fn pooled_stake_is_outvoted_by_the_same_stake_spread_out() {
     assert_eq!(shared, 20);
     assert!(shared > pooled);
 }
+
+// ==================== issue #93: get_voting_weight view + stake threshold views ====================
+
+/// Zero stake → base weight of BASE_VOTE_WEIGHT (1).
+#[test]
+fn voting_weight_zero_stake_is_base() {
+    let s = setup(1);
+    let member = s.members.get(0).unwrap();
+    assert_eq!(s.client.get_stake(&member), 0);
+    assert_eq!(s.client.get_voting_weight(&member), BASE_VOTE_WEIGHT);
+}
+
+/// Exactly one STAKE_WEIGHT_UNIT staked → quadratic boost = isqrt(1) = 1,
+/// so total weight = BASE_VOTE_WEIGHT + 1 = 2.
+#[test]
+fn voting_weight_exactly_one_unit() {
+    let s = setup(1);
+    let member = s.members.get(0).unwrap();
+    let unit = s.client.get_stake_weight_unit();
+    s.client.stake(&member, &unit);
+    assert_eq!(s.client.get_voting_weight(&member), BASE_VOTE_WEIGHT + 1);
+}
+
+/// One token short of a full unit → isqrt(0) = 0, still base weight.
+#[test]
+fn voting_weight_one_below_unit_is_still_base() {
+    let s = setup(1);
+    let member = s.members.get(0).unwrap();
+    let unit = s.client.get_stake_weight_unit();
+    s.client.stake(&member, &(unit - 1));
+    assert_eq!(s.client.get_voting_weight(&member), BASE_VOTE_WEIGHT);
+}
+
+/// Stake far above the cap; bonus is capped at MAX_STAKE_BONUS.
+#[test]
+fn voting_weight_capped_at_max_bonus() {
+    let s = setup(1);
+    let member = s.members.get(0).unwrap();
+    let unit = s.client.get_stake_weight_unit();
+    let cap = s.client.get_max_stake_bonus();
+    // Quadratic cap: MAX_STAKE_BONUS^2 * unit gets the cap, multiply by 10 to go well past it.
+    s.client.stake(&member, &(unit * cap * cap * 10));
+    assert_eq!(s.client.get_voting_weight(&member), BASE_VOTE_WEIGHT + cap);
+}
+
+/// Stake exactly at the quadratic cap threshold: MAX_STAKE_BONUS^2 * unit.
+#[test]
+fn voting_weight_at_exact_cap() {
+    let s = setup(1);
+    let member = s.members.get(0).unwrap();
+    let unit = s.client.get_stake_weight_unit();
+    let cap = s.client.get_max_stake_bonus();
+    // isqrt(cap^2 * unit / unit) = isqrt(cap^2) = cap.
+    s.client.stake(&member, &(unit * cap * cap));
+    assert_eq!(s.client.get_voting_weight(&member), BASE_VOTE_WEIGHT + cap);
+}
+
+/// The constant views are reachable on-chain and match the compile-time values.
+#[test]
+fn stake_threshold_constants_are_discoverable() {
+    let s = setup(1);
+    assert_eq!(s.client.get_stake_weight_unit(), crate::util::STAKE_WEIGHT_UNIT);
+    assert_eq!(s.client.get_max_stake_bonus(), crate::util::MAX_STAKE_BONUS);
+}

@@ -5,6 +5,10 @@ use crate::storage;
 use crate::types::{ProposalStatus, TreasuryProposal};
 use crate::util;
 
+// `env.events().publish` is deprecated in soroban-sdk in favour of
+// `#[contractevent]`, but migration is a coordinated, breaking wire-format
+// change (#85).  Suppress per-function so unrelated deprecations still surface.
+#[allow(deprecated)]
 pub fn propose_withdrawal(
     env: &Env,
     proposer: Address,
@@ -67,6 +71,7 @@ pub fn vote(env: &Env, voter: Address, proposal_id: u32, support: bool) -> Resul
 /// Shared vote-recording + execution path. Used by open voting and by the
 /// commit-reveal privacy module once a vote is revealed. Assumes the caller has
 /// already authorized `voter` and enforced any privacy-mode rules.
+#[allow(deprecated)]
 pub fn tally(
     env: &Env,
     mut proposal: TreasuryProposal,
@@ -140,6 +145,7 @@ pub fn execute_approved(env: &Env, proposal_id: u32) -> Result<(), Error> {
     Ok(())
 }
 
+#[allow(deprecated)]
 fn execute(env: &Env, proposal: &mut TreasuryProposal) -> Result<(), Error> {
     if util::treasury_balance(env) < proposal.amount {
         return Err(Error::InsufficientTreasury);

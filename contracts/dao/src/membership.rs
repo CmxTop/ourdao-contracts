@@ -5,6 +5,10 @@ use crate::storage::{self, extend_instance};
 use crate::types::{Member, MemberStatus, StakingRewardClaimed};
 use crate::util;
 
+// `env.events().publish` is deprecated in soroban-sdk in favour of
+// `#[contractevent]`, but migration is a coordinated, breaking wire-format
+// change (#85).  Suppress per-function so unrelated deprecations still surface.
+#[allow(deprecated)]
 pub fn register_member(env: &Env, member: Address) -> Result<(), Error> {
     util::require_initialized(env)?;
     util::require_not_paused(env)?;
@@ -54,6 +58,7 @@ pub fn register_member(env: &Env, member: Address) -> Result<(), Error> {
     Ok(())
 }
 
+#[allow(deprecated)]
 pub fn exit_dao(env: &Env, member: Address) -> Result<(), Error> {
     util::require_initialized(env)?;
     util::require_not_paused(env)?;
@@ -89,6 +94,7 @@ pub fn exit_dao(env: &Env, member: Address) -> Result<(), Error> {
     Ok(())
 }
 
+#[allow(deprecated)]
 pub fn claim_rewards(env: &Env, member: Address) -> Result<i128, Error> {
     util::require_initialized(env)?;
     util::require_not_paused(env)?;
