@@ -37,7 +37,7 @@ To verify a deployed contract matches a GitHub release:
 ## Reproducible build verification
 
 The repository includes `scripts/build-reproducible.sh`, which builds
-`ourdao-dao` inside the pinned official Stellar CLI container and prints the
+`ourdao-dao` inside a pinned Rust/Stellar CLI build container and prints the
 SHA-256 hash of the resulting WASM.
 
 Run a container-only build with:
