@@ -1629,6 +1629,8 @@ fn loan_proposal_quorum_higher_threshold_requires_more_votes() {
     assert_eq!(
         s.client.get_loan_proposal(&pid).unwrap().status,
         ProposalStatus::Approved
+    );
+}
 #[test]
 fn rejected_register_member_transfer_rolls_back_all_membership_state() {
     let s = rejecting_setup(0);
@@ -1927,4 +1929,37 @@ fn rejected_treasury_transfer_rolls_back_approval_vote_and_execution_state() {
         "vote marker must not survive a rejected execution transfer"
     );
     assert_eq!(s.token.balance(&destination), 0);
+}
+
+#[test]
+fn edit_loan_proposal_emits_loan_edit_event() {
+    let s = setup(2);
+    let borrower = s.members.get(0).unwrap();
+    let pid = s.client.request_loan(&borrower, &500, &None);
+    // Drain the loan_req event so only edit-related events remain.
+    let _ = s.env.events().all();
+    advance(&s.env, 10);
+    let edit_ts = s.env.ledger().timestamp();
+    s.client.edit_loan_proposal(&borrower, &pid, &600);
+    // Capture events before any further contract call (all() drains).
+    let events = s.env.events().all();
+    let mut found = false;
+    for e in events.events().iter() {
+        let ContractEventBody::V0(body) = &e.body;
+        let is_topic = matches!(body.topics.first(), Some(ScVal::Symbol(sym)) if sym.0.to_utf8_string_lossy() == "loan_edit");
+        if !is_topic {
+            continue;
+        }
+        let data_str = std::format!("{:?}", body.data);
+        if data_str.contains("600") {
+            found = true;
+        }
+    }
+    assert!(found, "loan_edit event with new_amount 600 not found");
+    // Verify storage separately, after event capture.
+    let after = s.client.get_loan_proposal(&pid).unwrap();
+    assert_eq!(after.amount, 600);
+    assert_eq!(after.last_edited_at, Some(edit_ts));
+    let expected = s.client.calculate_loan_terms(&600);
+    assert_eq!(after.total_repayment, expected.total_repayment);
 }
